@@ -39,7 +39,7 @@ const publicController = {
             res.json({ success: true, data: properties });
         } catch (error) {
             console.error('Public Listing Error:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
+            res.status(500).json({ success: false, message: 'Server error (listing)', debug: error.message });
         }
     },
 
@@ -93,7 +93,7 @@ const publicController = {
             res.json({ success: true, data: property });
         } catch (error) {
             console.error('Public Detail Error:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
+            res.status(500).json({ success: false, message: 'Server error (detail)', debug: error.message });
         }
     },
 
@@ -149,7 +149,7 @@ const publicController = {
             res.json({ success: true, data: units });
         } catch (error) {
             console.error('Public Units Error:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
+            res.status(500).json({ success: false, message: 'Server error (units)', debug: error.message });
         }
     },
 
@@ -205,7 +205,7 @@ const publicController = {
             res.json({ success: true, data: unit });
         } catch (error) {
             console.error('Public Unit Detail Error:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
+            res.status(500).json({ success: false, message: 'Server error (unit-detail)', debug: error.message });
         }
     },
 };

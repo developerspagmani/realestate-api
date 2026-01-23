@@ -83,7 +83,8 @@ const tenantMiddleware = async (req, res, next) => {
     console.error('Tenant middleware error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error (middleware)',
+      debug: error.message
     });
   }
 };
