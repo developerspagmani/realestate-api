@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
     "test": "jest",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
