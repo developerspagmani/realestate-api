@@ -20,7 +20,7 @@ const options = {
     },
     servers: [
       {
-        url: process.env.API_URL || 'http://localhost:3001',
+        url: process.env.API_URL || 'https://realestate-api-seven.vercel.app',
         description: 'Development server',
       },
       {
@@ -708,12 +708,12 @@ const options = {
         },
       },
     },
-    
+
   },
   apis: [
-      path.join(__dirname, '../routes/*.js'),
-      path.join(__dirname, '../swagger-annotations/*.js'),
-    ],
+    path.join(__dirname, '../routes/*.js'),
+    path.join(__dirname, '../swagger-annotations/*.js'),
+  ],
 };
 
 const specs = swaggerJsdoc(options);
