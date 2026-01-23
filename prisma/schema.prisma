@@ -1,0 +1,509 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Multi-tenant architecture
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  type      Int      // 1: Real Estate, 2: Co-working, 3: Mixed
+  domain    String?  @unique
+  website   String?
+  address   String?
+  city      String?
+  state     String?
+  country   String?
+  postalCode String? @map("postal_code")
+  status    Int      @default(1) // 1: active, 2: inactive, 3: suspended
+  plan      String?  @default("basic")
+  settings  Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users     User[]
+  properties Property[]
+  units     Unit[]
+  bookings  Booking[]
+  listings  Listing[]
+  leads     Lead[]
+  userPropertyAccess UserPropertyAccess[]
+  auditLogs AuditLog[]
+  media     Media[]
+  tenantModules TenantModule[]
+  widgets   Widget[]
+  amenities Amenity[]
+  agents    Agent[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid @map("tenant_id")
+  firstName    String?  @map("first_name")
+  lastName     String?  @map("last_name")
+  name         String?
+  email        String   @unique
+  phone        String?
+  companyName  String?  @map("company_name")
+  website      String?
+  addressLine1 String?  @map("address_line1")
+  addressLine2 String?  @map("address_line2")
+  city         String?
+  state        String?
+  country      String?
+  zipCode      String?  @map("zipcode")
+  passwordHash String?  @map("password_hash")
+  role         Int?     // 1: user, 2: admin, 3: owner
+  status       Int      @default(1) // 1: active, 2: inactive, 3: suspended
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  bookings     Booking[]
+  userPropertyAccess UserPropertyAccess[]
+  auditLogs    AuditLog[]
+  media        Media[]
+  leads        Lead[]
+  payments     Payment[]
+  agent        Agent?
+
+  @@map("users")
+}
+
+model Property {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid @map("tenant_id")
+  propertyType Int?     @map("property_type") // 1: residential, 2: commercial, 3: industrial, 4: mixed
+  title        String?
+  slug         String?  @unique
+  description  String?
+  addressLine1 String?  @map("address_line1")
+  addressLine2 String?  @map("address_line2")
+  city         String?
+  state        String?
+  country      String?
+  postalCode   String?  @map("postal_code")
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
+  status       Int      @default(1) // 1: active, 2: inactive, 3: archived
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // New fields
+  mainImageId  String?  @db.Uuid @map("main_image_id")
+  gallery      Json?    // Array of Media IDs or Objects
+  area         Int?     @map("area") // Sqft/Sqm
+  floorPlanId  String?  @db.Uuid @map("floor_plan_id")
+  brochureId   String?  @db.Uuid @map("brochure_id")
+  yearBuilt    Int?     @map("year_built")
+  neighborhood String?
+  parkingSpaces Int?    @map("parking_spaces")
+  bedrooms     Int?
+  bathrooms    Int?
+  lotSize      Int?     @map("lot_size")
+  listingType  String?  @default("Rent") @map("listing_type")
+
+  // Relations
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  mainImage    Media?   @relation("PropertyMainImage", fields: [mainImageId], references: [id])
+  floorPlan    Media?   @relation("PropertyFloorPlan", fields: [floorPlanId], references: [id])
+  brochure     Media?   @relation("PropertyBrochure", fields: [brochureId], references: [id])
+  propertyAmenities PropertyAmenity[]
+  units        Unit[]
+  leads        Lead[]
+  userPropertyAccess UserPropertyAccess[]
+
+  workspace3D  Property3DConfig?
+  widgets      Widget[]
+
+  @@map("properties")
+}
+
+model PropertyAmenity {
+  propertyId String   @db.Uuid @map("property_id")
+  amenityId  String   @db.Uuid @map("amenity_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity    Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([propertyId, amenityId])
+  @@map("property_amenities")
+}
+
+model Unit {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid @map("tenant_id")
+  propertyId   String?  @db.Uuid @map("property_id")
+  unitCategory Int      @map("unit_category") // 1: residential, 2: commercial, 3: industrial, 4: mixed
+  unitCode     String?  @map("unit_code")
+  slug         String?  @unique
+  floorNo      Int?     @map("floor_no")
+  capacity     Int?
+  sizeSqft     Int?     @map("size_sqft")
+  status       Int      @default(1) // 1: available, 2: occupied, 3: maintenance, 4: inactive
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // New fields
+  mainImageId  String?  @db.Uuid @map("main_image_id")
+  gallery      Json?    // Array of Media IDs or Objects
+
+  // Relations
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  property     Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  mainImage    Media?    @relation("UnitMainImage", fields: [mainImageId], references: [id])
+  unitPricing  UnitPricing[]
+  realEstateDetails RealEstateUnitDetails?
+  coworkingDetails CoworkingUnitDetails?
+  unitAmenities UnitAmenity[]
+  bookings     Booking[]
+  listings     Listing[]
+  leads        Lead[]
+
+  @@map("units")
+}
+
+model UnitPricing {
+  id           String   @id @default(uuid()) @db.Uuid
+  unitId       String?  @db.Uuid @map("unit_id")
+  pricingModel Int?     @map("pricing_model") // 1: fixed, 2: hourly, 3: daily, 4: monthly, 5: yearly
+  price        Decimal? @db.Decimal(15, 2)
+  currency     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  unit         Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  @@map("unit_pricing")
+}
+
+model RealEstateUnitDetails {
+  unitId       String   @db.Uuid @map("unit_id")
+  bedrooms     Int?
+  bathrooms    Int?
+  furnishing   Int?     // 1: unfurnished, 2: semi-furnished, 3: fully furnished
+  parkingSlots Int?    @map("parking_slots")
+  facing      Int?     // 1: north, 2: south, 3: east, 4: west, 5: north-east, 6: north-west, 7: south-east, 8: south-west
+
+  // Relations
+  unit        Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([unitId])
+  @@map("real_estate_unit_details")
+}
+
+model CoworkingUnitDetails {
+  unitId       String   @db.Uuid @map("unit_id")
+  seatType     Int?     @map("seat_type") // 1: desk, 2: cabin, 3: meeting room, 4: event space
+  pricingBasis Int?     @map("pricing_basis") // 1: per seat, 2: per unit, 3: per hour, 4: per day
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  unit         Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@id([unitId])
+  @@map("coworking_unit_details")
+}
+
+model Amenity {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @db.Uuid @map("tenant_id")
+  name      String?
+  category  Int?     // 1: facilities, 2: technology, 3: comfort, 4: safety, 5: other
+  icon      String?
+  status    Int      @default(1) // 1: active, 2: inactive
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant            Tenant?           @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  unitAmenities     UnitAmenity[]
+  propertyAmenities PropertyAmenity[]
+
+  @@map("amenities")
+}
+
+model UnitAmenity {
+  unitId     String   @db.Uuid @map("unit_id")
+  amenityId  String   @db.Uuid @map("amenity_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  unit       Unit?    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  amenity    Amenity? @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([unitId, amenityId])
+  @@map("unit_amenities")
+}
+
+model Booking {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String?  @db.Uuid @map("tenant_id")
+  unitId          String?  @db.Uuid @map("unit_id")
+  userId          String?  @db.Uuid @map("user_id")
+  agentId         String?  @db.Uuid @map("agent_id")
+  startAt         DateTime @map("start_at")
+  endAt           DateTime @map("end_at")
+  status          Int      @default(1) // 1: pending, 2: confirmed, 3: cancelled, 4: completed, 5: no_show
+  totalPrice      Decimal? @db.Decimal(10, 2) @map("total_price")
+  paymentStatus   Int      @default(1) @map("payment_status") // 1: pending, 2: paid, 3: refunded
+  notes           String?  @db.Text
+  specialRequests String?  @db.Text @map("special_requests")
+  qrCode          String?  @db.Text @map("qr_code")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  unit            Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  payments        Payment[]
+  commissions     Commission[]
+
+  @@map("bookings")
+}
+
+model Listing {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String?   @db.Uuid @map("tenant_id")
+  unitId        String?   @db.Uuid @map("unit_id")
+  slug          String?   @unique
+  isPublished   Boolean   @default(false) @map("is_published")
+  publishedAt   DateTime? @map("published_at")
+  seoTitle      String?   @map("seo_title")
+  seoDescription String?  @map("seo_description")
+
+  // Relations
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  unit          Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  @@map("listings")
+}
+
+model Lead {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String?   @db.Uuid @map("tenant_id")
+  unitId        String?   @db.Uuid @map("unit_id")
+  propertyId    String?   @db.Uuid @map("property_id")
+  userId        String?   @db.Uuid @map("user_id")
+  agentId       String?   @db.Uuid @map("agent_id")
+  name          String?
+  email         String?
+  phone         String?
+  company       String?
+  message       String?
+  source        Int?      // 1: website, 2: email, 3: phone, 4: social, 5: referral, 6: other, 7: chatbot
+  status        Int       @default(1) // 1: new, 2: contacted, 3: qualified, 4: converted, 5: lost
+  priority      Int       @default(2) // 1: low, 2: medium, 3: high
+  budget        Decimal?  @db.Decimal(15, 2)
+  preferredDate DateTime? @map("preferred_date")
+  assignedAt    DateTime? @map("assigned_at")
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @default(now()) @map("updated_at")
+
+  // Relations
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  unit        Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  property    Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  agent       Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@map("leads")
+}
+
+model UserPropertyAccess {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid @map("tenant_id")
+  userId       String?  @db.Uuid @map("user_id")
+  propertyId   String?  @db.Uuid @map("property_id")
+  accessLevel  Int?     @map("access_level") // 1: read, 2: write, 3: admin
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  property     Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@map("user_property_access")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @db.Uuid @map("tenant_id")
+  userId    String?  @db.Uuid @map("user_id")
+  action    String?
+  entity    String?
+  entityId  String?  @db.Uuid @map("entity_id")
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model Media {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String?  @db.Uuid @map("tenant_id")
+  userId          String?  @db.Uuid @map("user_id")
+  filename        String?
+  originalName    String?  @map("original_name")
+  mimeType        String?  @map("mime_type")
+  size            Int?
+  url             String?
+  alt             String?
+  description     String?
+  category        String?  @default("general")
+  type            String?  // image, video, document
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  propertyMainImages Property[] @relation("PropertyMainImage")
+  propertyFloorPlans Property[] @relation("PropertyFloorPlan")
+  propertyBrochures Property[] @relation("PropertyBrochure")
+  unitMainImages     Unit[]     @relation("UnitMainImage")
+
+  @@map("media")
+}
+
+// Master definition of platform features
+model Module {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  status      Int      @default(1) // 1: Active, 2: Maintenance, 3: Disabled
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  tenantModules TenantModule[]
+
+  @@map("modules")
+}
+
+// Assignments of modules to specific owners/tenants
+model TenantModule {
+  tenantId    String   @db.Uuid @map("tenant_id")
+  moduleId    String   @db.Uuid @map("module_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  settings    Json?    // Module-specific limits or configs
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, moduleId])
+  @@map("tenant_modules")
+}
+
+model Widget {
+  id            String   @id @default(uuid()) @db.Uuid
+  uniqueId      String   @unique @map("unique_id") // Human readable unique ID
+  tenantId      String?  @db.Uuid @map("tenant_id")
+  propertyId    String?  @db.Uuid @map("property_id")
+  name          String
+  type          String   // listing, booking, custom
+  configuration Json     // Design settings: colors, font, layout
+  status        Int      @default(1) // 1: active, 2: paused
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@map("widgets")
+}
+
+model Payment {
+  id              String   @id @default(uuid()) @db.Uuid
+  bookingId       String?  @db.Uuid @map("booking_id")
+  userId          String?  @db.Uuid @map("user_id")
+  amount          Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  status          String   // COMPLETED, FAILED, REFUNDED
+  paymentMethod   String?  @map("payment_method")
+  transactionId   String?  @unique @map("transaction_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  booking         Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("payments")
+}
+model Property3DConfig {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @unique @db.Uuid @map("property_id")
+  config       Json     // Stores the scene configuration, floor dims, initial camera, etc.
+  layout       Json     // Stores the positions and mapping of units in 3D space
+  tourData     Json?    // Hotspots and material customization data
+  status       Int      @default(1) // 1: Active, 2: Inactive
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_3d_configs")
+}
+
+// Agent Module
+model Agent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @db.Uuid @map("tenant_id")
+  userId             String   @unique @db.Uuid @map("user_id") // One user = One agent profile
+  specialization     String?
+  commissionRate     Decimal  @default(0.0) @map("commission_rate") @db.Decimal(5, 2)
+  status             Int      @default(1) // 1: Active, 2: Inactive, 3: On Leave
+  lastLeadAssignedAt DateTime? @map("last_lead_assigned_at")
+  totalLeads         Int      @default(0) @map("total_leads")
+  totalDeals         Int      @default(0) @map("total_deals")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leads       Lead[]
+  commissions Commission[]
+  bookings    Booking[]
+
+  @@map("agents")
+}
+
+model Commission {
+  id          String   @id @default(uuid()) @db.Uuid
+  agentId     String   @db.Uuid @map("agent_id")
+  bookingId   String?  @db.Uuid @map("booking_id")
+  amount      Decimal  @db.Decimal(15, 2)
+  rateSnapshot Decimal @map("rate_snapshot") @db.Decimal(5, 2) // Rate at time of deal
+  status      String   @default("PENDING") // PENDING, PAID, CANCELLED
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@map("commissions")
+}
