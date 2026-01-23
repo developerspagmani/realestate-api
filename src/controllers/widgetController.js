@@ -211,6 +211,53 @@ const widgetController = {
                 take: 10
             });
 
+            // Resolve gallery IDs into full Media objects
+            const allMediaIds = new Set();
+            properties.forEach(p => {
+                if (Array.isArray(p.gallery)) p.gallery.forEach(id => { if (typeof id === 'string') allMediaIds.add(id); });
+                p.units.forEach(u => {
+                    if (Array.isArray(u.gallery)) u.gallery.forEach(id => { if (typeof id === 'string') allMediaIds.add(id); });
+                });
+            });
+
+            if (allMediaIds.size > 0) {
+                const mediaItems = await prisma.media.findMany({
+                    where: { id: { in: Array.from(allMediaIds) } }
+                });
+
+                const mediaMap = mediaItems.reduce((acc, current) => {
+                    acc[current.id] = current;
+                    return acc;
+                }, {});
+
+                // Replace IDs with objects
+                properties.forEach(p => {
+                    if (Array.isArray(p.gallery)) {
+                        p.gallery = p.gallery.map(item => {
+                            if (typeof item === 'string') {
+                                if (mediaMap[item]) return mediaMap[item];
+                                // If it looks like a URL but wasn't in media table, wrap it
+                                if (item.includes('/') || item.includes('.')) return { url: item };
+                                return null;
+                            }
+                            return item;
+                        }).filter(item => item && typeof item === 'object' && item.url);
+                    }
+                    p.units.forEach(u => {
+                        if (Array.isArray(u.gallery)) {
+                            u.gallery = u.gallery.map(item => {
+                                if (typeof item === 'string') {
+                                    if (mediaMap[item]) return mediaMap[item];
+                                    if (item.includes('/') || item.includes('.')) return { url: item };
+                                    return null;
+                                }
+                                return item;
+                            }).filter(item => item && typeof item === 'object' && item.url);
+                        }
+                    });
+                });
+            }
+
             res.json({
                 success: true,
                 widget,
