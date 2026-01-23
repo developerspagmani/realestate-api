@@ -83,9 +83,7 @@ const tenantMiddleware = async (req, res, next) => {
     console.error('Tenant middleware error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
-      error: error.message, // Temporary: add this to see what's failing on Vercel
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: 'Server error'
     });
   }
 };
