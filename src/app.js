@@ -10,6 +10,11 @@ require('dotenv').config();
 const { specs, swaggerUi } = require('./config/swagger');
 const { connectDB, disconnectDB, getDatabaseInfo } = require('./config/database');
 
+console.log('--- API Initialization ---');
+console.log('Environment:', process.env.NODE_ENV);
+console.log('Prisma URL configured:', !!process.env.DATABASE_URL);
+console.log('--------------------------');
+
 // Routes
 const authRoutes = require('./routes/auth'); // Restored original
 const userRoutes = require('./routes/users');

@@ -1,5 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 
+if (!process.env.DATABASE_URL) {
+  console.error('❌ DATABASE_URL is not defined in environment variables');
+}
+
 const prisma = new PrismaClient({
   log: ['query', 'info', 'warn', 'error'],
   errorFormat: 'pretty',
@@ -26,7 +30,7 @@ const disconnectDB = async () => {
 
 const getDatabaseInfo = () => {
   const url = process.env.DATABASE_URL;
-  
+
   return {
     url: url?.replace(/\/\/.*@/, '//***:***@')
   };
