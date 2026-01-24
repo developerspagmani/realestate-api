@@ -1,4 +1,5 @@
 const { prisma } = require('../config/database');
+const cloudinary = require('../config/cloudinary');
 
 /**
  * Get all media files
@@ -174,8 +175,6 @@ const uploadMedia = async (req, res) => {
       if (req.body.tenantId && isUuid(req.body.tenantId)) tenantId = req.body.tenantId;
       if (req.body.ownerId && isUuid(req.body.ownerId)) userId = req.body.ownerId;
     }
-    // For owners (role 3), we strictly use their own tenantId and userId resolved above.
-    // We ignore req.body.tenantId and req.body.ownerId to avoid non-UUID errors or security bypass.
 
     console.log('Final Resolve:', { tenantId, userId, role: req.user.role });
 
@@ -185,24 +184,31 @@ const uploadMedia = async (req, res) => {
     else if (file.mimetype.startsWith('video/')) type = 'video';
     else if (file.mimetype.startsWith('audio/')) type = 'audio';
 
-    // Construct URL - in production this would be S3 URL
-    // For local dev, we serve from /uploads
-    const protocol = req.protocol;
-    const host = req.get('host');
+    // Upload to Cloudinary using stream
+    const uploadToCloudinary = (fileBuffer) => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: `realestate/${new Date().getFullYear()}/${(new Date().getMonth() + 1).toString().padStart(2, '0')}`,
+            resource_type: 'auto',
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        stream.end(fileBuffer);
+      });
+    };
 
-    // Convert destination to relative path from uploads and normalize slashes
-    const normalizedDest = file.destination.replace(/\\/g, '/');
-    const uploadsMatch = normalizedDest.match(/\/uploads\/(.*)$/);
-    const relativePath = uploadsMatch ? uploadsMatch[1] : '';
-    const cleanRelativePath = relativePath ? (relativePath.endsWith('/') ? relativePath : relativePath + '/') : '';
+    const cloudinaryResult = await uploadToCloudinary(file.buffer);
+    const url = cloudinaryResult.secure_url;
 
-    const url = `${protocol}://${host}/uploads/${cleanRelativePath}${file.filename}`;
-
-    console.log('Create Media Request:', { tenantId, userId, filename: file.filename });
+    console.log('Cloudinary Upload Result:', { url, public_id: cloudinaryResult.public_id });
 
     const media = await prisma.media.create({
       data: {
-        filename: `${cleanRelativePath}${file.filename}`,
+        filename: cloudinaryResult.public_id,
         originalName: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
@@ -332,6 +338,16 @@ const deleteMedia = async (req, res) => {
         success: false,
         message: 'Access denied'
       });
+    }
+
+    // Delete from Cloudinary if it's not a documentation type or if we just want to delete it anyway
+    if (existingMedia.filename) {
+      try {
+        await cloudinary.uploader.destroy(existingMedia.filename);
+      } catch (cloudinaryError) {
+        console.error('Cloudinary delete error:', cloudinaryError);
+        // Continue with database deletion even if Cloudinary fails
+      }
     }
 
     await prisma.media.delete({
