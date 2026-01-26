@@ -118,17 +118,23 @@ const getAllLeads = async (req, res) => {
               }
             }
           },
-          agent: {
-            select: {
-              id: true,
-              user: {
+          agentLeads: {
+            where: { status: 1 },
+            include: {
+              agent: {
                 select: {
                   id: true,
-                  name: true,
-                  email: true
+                  user: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true
+                    }
+                  }
                 }
               }
-            }
+            },
+            take: 1
           }
         },
         orderBy: { [sortBy]: sortOrder },
@@ -138,10 +144,17 @@ const getAllLeads = async (req, res) => {
       prisma.lead.count({ where })
     ]);
 
+    // Transform leads to include flat 'agent' object
+    const transformedLeads = leads.map(lead => ({
+      ...lead,
+      agent: lead.agentLeads?.[0]?.agent || null,
+      agentLeads: undefined
+    }));
+
     res.status(200).json({
       success: true,
       data: {
-        leads,
+        leads: transformedLeads,
         pagination: {
           page: pageInt,
           limit: limitInt,
@@ -187,6 +200,14 @@ const getLeadById = async (req, res) => {
             status: true,
           }
         },
+        agentLeads: {
+          where: { status: 1 },
+          include: {
+            agent: {
+              include: { user: { select: { name: true, email: true, phone: true } } }
+            }
+          }
+        },
         unit: {
           include: {
             property: {
@@ -209,9 +230,16 @@ const getLeadById = async (req, res) => {
       });
     }
 
+    // Flatten agent for backward compatibility
+    const transformedLead = {
+      ...lead,
+      agent: lead.agentLeads?.[0]?.agent || null,
+      agentLeads: undefined
+    };
+
     res.status(200).json({
       success: true,
-      data: { lead }
+      data: { lead: transformedLead }
     });
   } catch (error) {
     console.error('Get lead error:', error);
@@ -280,8 +308,7 @@ const createLead = async (req, res) => {
         status: status ? parseInt(status) : 1, // 1 = NEW
         userId: req.user?.id || null,
         notes: notes || null,
-        agentId: agentId || null,
-        assignedAt: agentId ? new Date() : null
+        // agentId removed
       },
       include: {
         unit: {
@@ -290,24 +317,23 @@ const createLead = async (req, res) => {
             unitCode: true,
             unitCategory: true,
           }
-        },
-        agent: {
-          select: {
-            id: true,
-            user: { select: { name: true } }
-          }
         }
       }
     });
 
     // Auto-assign to agent using Round Robin ONLY if not manually assigned
-    if (!agentId) {
-      const assignedAgent = await assignLeadRoundRobin(tenantId, lead.id);
-      if (assignedAgent) {
-        console.log(`Lead ${lead.id} auto-assigned to Agent ${assignedAgent.id}`);
-      }
-    } else {
-      console.log(`Lead ${lead.id} manually assigned to Agent ${agentId}`);
+    // Handle Manually Assigned Agent
+    if (agentId) {
+      console.log(`Lead ${lead.id} manually assigned to Agent ${agentId} via junction table`);
+      await prisma.agentLead.create({
+        data: {
+          agentId,
+          leadId: lead.id,
+          isPrimary: true,
+          status: 1
+        }
+      });
+
       // Update agent stats for manual assignment
       await prisma.agent.update({
         where: { id: agentId },
@@ -316,6 +342,13 @@ const createLead = async (req, res) => {
           lastLeadAssignedAt: new Date()
         }
       });
+    } else {
+      // Auto-assign to agent using Round Robin
+      // Note: assignLeadRoundRobin now handles the AgentLead creation internally
+      const assignedAgent = await assignLeadRoundRobin(tenantId, lead.id);
+      if (assignedAgent) {
+        console.log(`Lead ${lead.id} auto-assigned to Agent ${assignedAgent.id}`);
+      }
     }
 
     res.status(201).json({
@@ -595,12 +628,30 @@ const updateLead = async (req, res) => {
     if (unitId) data.unitId = unitId;
 
     // Handle Agent Reassignment
+    // Handle Agent Reassignment (Replace existing active assignments)
     if (agentId !== undefined) {
-      data.agentId = agentId;
       if (agentId) {
-        data.assignedAt = new Date();
+        // Deactivate existing active assignments
+        await prisma.agentLead.updateMany({
+          where: { leadId: id, status: 1 },
+          data: { status: 2 } // Inactive/Replaced
+        });
+
+        // Create new assignment
+        await prisma.agentLead.create({
+          data: {
+            agentId,
+            leadId: id,
+            isPrimary: true,
+            status: 1
+          }
+        });
       } else {
-        data.assignedAt = null;
+        // If explicitly null, just deactivate all (unassign)
+        await prisma.agentLead.updateMany({
+          where: { leadId: id, status: 1 },
+          data: { status: 2 }
+        });
       }
     }
 
@@ -630,10 +681,15 @@ const updateLead = async (req, res) => {
             unitCategory: true,
           }
         },
-        agent: {
-          select: {
-            id: true,
-            user: { select: { name: true } }
+        agentLeads: {
+          where: { status: 1 },
+          include: {
+            agent: {
+              select: {
+                id: true,
+                user: { select: { name: true } }
+              }
+            }
           }
         }
       }

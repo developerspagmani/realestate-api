@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
+const { sendActivationEmail } = require('../utils/emailService');
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -63,6 +65,9 @@ const register = async (req, res) => {
       const salt = await bcrypt.genSalt(12);
       const hashedPassword = await bcrypt.hash(password, salt);
 
+      // Generate activation token
+      const activationToken = crypto.randomBytes(32).toString('hex');
+
       // Create user
       const user = await prisma.user.create({
         data: {
@@ -81,7 +86,10 @@ const register = async (req, res) => {
           country,
           zipCode,
           role: isOwnerRegistration ? 3 : 1, // 3: Owner, 1: User
-          tenantId: tenant ? tenant.id : undefined
+          tenantId: tenant ? tenant.id : undefined,
+          status: 2, // 2: Inactive / Pending Verification
+          activationToken,
+          isVerified: false
         },
         select: {
           id: true,
@@ -89,19 +97,7 @@ const register = async (req, res) => {
           firstName: true,
           lastName: true,
           name: true,
-          phone: true,
-          companyName: true,
-          website: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          state: true,
-          country: true,
-          zipCode: true,
-          role: true,
-          status: true,
-          createdAt: true,
-          tenantId: true
+          activationToken: true
         }
       });
 
@@ -110,15 +106,14 @@ const register = async (req, res) => {
 
     const { user, tenant } = result;
 
-    // Generate token
-    const token = generateToken(user.id);
+    // Send activation email
+    await sendActivationEmail(user.email, user.activationToken, user.firstName);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful. Please check your email to activate your account.',
       data: {
-        user,
-        token,
+        email: user.email,
         tenant // Return tenant info if created
       }
     });
@@ -132,14 +127,67 @@ const register = async (req, res) => {
   }
 };
 
+// Verify Email
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Invalid token' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { activationToken: token }
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired activation link' });
+    }
+
+    if (user.isVerified) {
+      return res.status(200).json({
+        success: true,
+        message: 'Account is already verified. Please login.'
+      });
+    }
+
+    // Activate user
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        status: 1, // Active
+        isVerified: true,
+        activationToken: null // Clear token after use (optional, or keep for audit)
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully. You can now login.'
+    });
+
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during verification'
+    });
+  }
+};
+
 // Login user
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
+    // Find user by email OR phone
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          email ? { email } : null,
+          phone ? { phone } : null
+        ].filter(Boolean)
+      }
     });
 
     if (!user) {
@@ -175,6 +223,12 @@ const login = async (req, res) => {
 
     // Check if user is active (status === 1 means active)
     if (user.status !== 1) {
+      if (user.status === 2) {
+        return res.status(401).json({
+          success: false,
+          message: 'Account not activated. Please check your email.'
+        });
+      }
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated'
@@ -302,6 +356,7 @@ const updatePassword = async (req, res) => {
 module.exports = {
   register,
   login,
+  verifyEmail,
   getMe,
   updatePassword,
 };

@@ -62,7 +62,9 @@ model User {
   zipCode      String?  @map("zipcode")
   passwordHash String?  @map("password_hash")
   role         Int?     // 1: user, 2: admin, 3: owner
-  status       Int      @default(1) // 1: active, 2: inactive, 3: suspended
+  activationToken String?  @map("activation_token")
+  isVerified   Boolean  @default(false) @map("is_verified")
+  status       Int      @default(2) // 1: active, 2: inactive (pending verification), 3: suspended
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -124,6 +126,7 @@ model Property {
 
   workspace3D  Property3DConfig?
   widgets      Widget[]
+  agentProperties AgentProperty[]
 
   @@map("properties")
 }
@@ -296,7 +299,6 @@ model Lead {
   unitId        String?   @db.Uuid @map("unit_id")
   propertyId    String?   @db.Uuid @map("property_id")
   userId        String?   @db.Uuid @map("user_id")
-  agentId       String?   @db.Uuid @map("agent_id")
   name          String?
   email         String?
   phone         String?
@@ -317,7 +319,7 @@ model Lead {
   unit        Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
   property    Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  agent       Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentLeads  AgentLead[]
 
   @@map("leads")
 }
@@ -406,7 +408,6 @@ model TenantModule {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
@@ -425,8 +426,6 @@ model Widget {
   status        Int      @default(1) // 1: active, 2: paused
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-
-  // Relations
   tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
@@ -444,8 +443,6 @@ model Payment {
   transactionId   String?  @unique @map("transaction_id")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
-
-  // Relations
   booking         Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -460,8 +457,6 @@ model Property3DConfig {
   status       Int      @default(1) // 1: Active, 2: Inactive
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-
-  // Relations
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("property_3d_configs")
@@ -480,13 +475,12 @@ model Agent {
   totalDeals         Int      @default(0) @map("total_deals")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
-
-  // Relations
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  leads       Lead[]
   commissions Commission[]
   bookings    Booking[]
+  agentProperties AgentProperty[]
+  agentLeads      AgentLead[]
 
   @@map("agents")
 }
@@ -500,10 +494,42 @@ model Commission {
   status      String   @default("PENDING") // PENDING, PAID, CANCELLED
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@map("commissions")
+}
+
+model AgentProperty {
+  id             String   @id @default(uuid()) @db.Uuid
+  agentId        String   @db.Uuid @map("agent_id")
+  propertyId     String   @db.Uuid @map("property_id")
+  commissionRate Decimal? @db.Decimal(5, 2) @map("commission_rate")
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  status         Int      @default(1) // 1: Active, 2: Inactive
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("agent_properties")
+}
+
+model AgentLead {
+  id             String   @id @default(uuid()) @db.Uuid
+  agentId        String   @db.Uuid @map("agent_id")
+  leadId         String   @db.Uuid @map("lead_id")
+  isPrimary      Boolean  @default(true) @map("is_primary")
+  status         Int      @default(1) // 1: Active, 2: Revoked/History
+  notes          String?  @db.Text
+  assignedAt     DateTime @default(now()) @map("assigned_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("agent_leads")
 }

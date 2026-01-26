@@ -40,9 +40,10 @@ const schemas = {
   }),
 
   login: Joi.object({
-    email: Joi.string().email().required(),
+    email: Joi.string().email().optional(),
+    phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional(),
     password: Joi.string().required(),
-  }),
+  }).or('email', 'phone'),
 
   updateProfile: Joi.object({
     name: Joi.string().min(2).max(100).optional(),
@@ -265,6 +266,15 @@ const schemas = {
     amenities: Joi.array().items(Joi.string().uuid()).optional().allow(null)
   }),
 
+  assignProperty: Joi.object({
+    agentId: Joi.string().uuid().required(),
+    propertyId: Joi.string().uuid().required(),
+    commissionRate: Joi.number().min(0).max(100).optional(),
+    isPrimary: Joi.boolean().optional(),
+    status: Joi.number().integer().valid(1, 2).optional(),
+    notes: Joi.string().max(1000).optional().allow('', null),
+  }),
+
   // Unit schemas
   createUnit: Joi.object({
     tenantId: Joi.string().uuid().required(),
@@ -322,10 +332,10 @@ const schemas = {
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).optional().default(1),
     priority: Joi.number().integer().valid(1, 2, 3).optional().default(2),
     unitId: Joi.string().uuid().optional().allow('', null),
+    propertyId: Joi.string().uuid().optional().allow('', null),
     budget: Joi.number().min(0).optional().allow(null),
     preferredDate: Joi.date().optional().allow(null),
     notes: Joi.string().max(1000).optional().allow('', null),
-    agentId: Joi.string().uuid().optional().allow('', null),
   }),
 
   updateLead: Joi.object({
@@ -342,16 +352,52 @@ const schemas = {
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).optional(),
     priority: Joi.number().integer().valid(1, 2, 3).optional(),
     unitId: Joi.string().uuid().optional().allow('', null),
+    propertyId: Joi.string().uuid().optional().allow('', null),
     budget: Joi.number().min(0).optional().allow(null),
     preferredDate: Joi.date().optional().allow(null),
     notes: Joi.string().max(1000).optional().allow('', null),
-    agentId: Joi.string().uuid().optional().allow('', null),
+  }),
+
+  assignLead: Joi.object({
+    agentId: Joi.string().uuid().required(),
+    leadId: Joi.string().uuid().required(),
+    isPrimary: Joi.boolean().optional(),
+    status: Joi.number().integer().valid(1, 2).optional(),
+    notes: Joi.string().max(1000).optional().allow('', null),
   }),
 
   updateLeadStatus: Joi.object({
     tenantId: Joi.string().uuid().required(),
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).required(), // 1: new, 2: contacted, 3: qualified, 4: converted, 5: lost
     notes: Joi.string().max(1000).optional(),
+  }),
+
+  // Agent schemas
+  createAgent: Joi.object({
+    tenantId: Joi.string().uuid().optional(),
+    firstName: Joi.string().min(2).max(100).required(),
+    lastName: Joi.string().min(2).max(100).required(),
+    email: Joi.string().email().required(),
+    phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).required(),
+    password: Joi.string().min(6).required(),
+    specialization: Joi.string().max(200).optional().allow('', null),
+    commissionRate: Joi.number().min(0).max(100).default(2.5),
+    status: Joi.number().integer().valid(1, 2, 3).default(1),
+  }).unknown(true),
+
+  updateAgent: Joi.object({
+    tenantId: Joi.string().uuid().optional(),
+    firstName: Joi.string().min(2).max(100).optional(),
+    lastName: Joi.string().min(2).max(100).optional(),
+    phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional().allow('', null),
+    specialization: Joi.string().max(200).optional().allow('', null),
+    commissionRate: Joi.number().min(0).max(100).optional(),
+    status: Joi.number().integer().valid(1, 2, 3).optional(),
+  }),
+
+  updateAgentLeadStatus: Joi.object({
+    status: Joi.number().integer().valid(1, 2, 3, 4, 5).required(),
+    notes: Joi.string().max(1000).optional().allow('', null),
   }),
 };
 

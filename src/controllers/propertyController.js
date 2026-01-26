@@ -101,7 +101,7 @@ const createProperty = async (req, res) => {
 // Get all properties for tenant
 const getProperties = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, city, state, propertyType, tenantId: queryTenantId, ownerId, industryType } = req.query;
+    const { page = 1, limit = 10, status, city, state, propertyType, tenantId: queryTenantId, ownerId, industryType, agentId } = req.query;
     const isAdmin = req.user.role === 2;
     const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
     if (!tenantId && !isAdmin && !industryType) {
@@ -115,11 +115,8 @@ const getProperties = async (req, res) => {
     const where = {};
     if (tenantId) where.tenantId = tenantId;
 
-    // industryType filtering (Tenant type 1 or 2)
     if (industryType) {
-      where.tenant = {
-        type: parseInt(industryType)
-      };
+      where.tenantId = parseInt(industryType);
     }
 
     if (status) where.status = parseInt(status);
@@ -127,7 +124,12 @@ const getProperties = async (req, res) => {
     if (state) where.state = state;
     if (propertyType) where.propertyType = parseInt(propertyType);
 
-    // Admin filtering by owner
+    if (agentId) {
+      where.agentProperties = {
+        some: { agentId }
+      };
+    }
+
     // Owner/Admin filtering
     const effectiveOwnerId = isAdmin ? ownerId : (req.user.role === 3 ? req.user.id : null);
 
@@ -142,10 +144,11 @@ const getProperties = async (req, res) => {
           some: { userId: effectiveOwnerId }
         };
       }
-      // If no records, show all for tenant (tenantId is already in 'where')
     }
 
-    const skip = (page - 1) * limit;
+    const pageInt = parseInt(page) || 1;
+    const limitInt = parseInt(limit) || 10;
+    const skip = (pageInt - 1) * limitInt;
 
     const [properties, total] = await Promise.all([
       prisma.property.findMany({
@@ -168,7 +171,7 @@ const getProperties = async (req, res) => {
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: parseInt(limit)
+        take: limitInt
       }),
       prisma.property.count({ where })
     ]);
@@ -178,10 +181,10 @@ const getProperties = async (req, res) => {
       data: {
         properties,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: pageInt,
+          limit: limitInt,
           total,
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / limitInt)
         }
       }
     });

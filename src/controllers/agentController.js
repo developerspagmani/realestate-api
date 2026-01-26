@@ -11,10 +11,12 @@ const createAgent = async (req, res) => {
             phone,
             password,
             specialization,
-            commissionRate
+            commissionRate,
+            status,
+            tenantId: bodyTenantId
         } = req.body;
 
-        const tenantId = req.user?.tenantId;
+        const tenantId = (req.user?.role === 2 && bodyTenantId) ? bodyTenantId : req.user?.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
@@ -46,14 +48,9 @@ const createAgent = async (req, res) => {
                     lastName,
                     name: `${firstName} ${lastName}`,
                     phone,
-                    role: 2, // Using 2 (Admin) for now, or we can define 4. Let's use 2 but restrict via module? Or maybe just create a generic user role 1 with specific permissions? 
-                    // Actually concept said Role 4. But schema comment says // 1: user, 2: admin, 3: owner.
-                    // Let's stick to existing roles for now, maybe 1 (User) + Agent Profile makes them an agent?
-                    // Or let's assume we use role 2 (Admin) but with limited permissions?
-                    // Safe bet: Use Role 1 (User) and the existance of 'Agent' record defines them as Agent.
-                    role: 1,
+                    role: 4, // Role 4: Agent
                     tenantId,
-                    status: 1
+                    status: status || 1
                 }
             });
 
@@ -63,7 +60,7 @@ const createAgent = async (req, res) => {
                     userId: user.id,
                     specialization,
                     commissionRate: commissionRate || 2.5,
-                    status: 1 // Active
+                    status: status || 1 // Active
                 }
             });
 
@@ -137,22 +134,66 @@ const getAllAgents = async (req, res) => {
 const updateAgent = async (req, res) => {
     try {
         const { id } = req.params;
-        const { specialization, commissionRate, status } = req.body;
-        const tenantId = req.user?.tenantId;
+        const { specialization, commissionRate, status, tenantId: bodyTenantId } = req.body;
 
-        // Verify ownership
-        const existing = await prisma.agent.findUnique({ where: { id } });
-        if (!existing || existing.tenantId !== tenantId) {
+        // If admin, they can update any agent. If owner, check ownership.
+        const isAdmin = req.user?.role === 2;
+        const userTenantId = req.user?.tenantId;
+
+        const existing = await prisma.agent.findUnique({
+            where: { id },
+            include: { user: true }
+        });
+        if (!existing) {
             return res.status(404).json({ success: false, message: 'Agent not found' });
         }
 
-        const agent = await prisma.agent.update({
-            where: { id },
-            data: {
-                specialization,
-                commissionRate,
-                status: status ? parseInt(status) : undefined
+        if (!isAdmin && existing.tenantId !== userTenantId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized to update this agent' });
+        }
+
+        const agent = await prisma.$transaction(async (tx) => {
+            // Update User fields if provided
+            if (req.body.firstName || req.body.lastName || req.body.phone) {
+                const updateData = {};
+                if (req.body.firstName) updateData.firstName = req.body.firstName;
+                if (req.body.lastName) updateData.lastName = req.body.lastName;
+                if (req.body.phone) updateData.phone = req.body.phone;
+
+                // Update full name if both parts or either are provided
+                if (req.body.firstName || req.body.lastName) {
+                    const fname = req.body.firstName || existing.user?.firstName;
+                    const lname = req.body.lastName || existing.user?.lastName;
+                    updateData.name = `${fname || ''} ${lname || ''}`.trim();
+                }
+
+                await tx.user.update({
+                    where: { id: existing.userId },
+                    data: updateData
+                });
             }
+
+            // Update Agent fields
+            return await tx.agent.update({
+                where: { id },
+                data: {
+                    specialization,
+                    commissionRate,
+                    status: status ? parseInt(status) : undefined
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            firstName: true,
+                            lastName: true,
+                            phone: true,
+                            name: true
+                        }
+                    }
+                }
+            });
         });
 
         res.status(200).json({
@@ -171,16 +212,20 @@ const updateAgent = async (req, res) => {
 const deleteAgent = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.user?.tenantId;
+        const isAdmin = req.user?.role === 2;
+        const userTenantId = req.user?.tenantId;
 
-        // Verify ownership
         const existing = await prisma.agent.findUnique({
             where: { id },
             include: { user: true }
         });
 
-        if (!existing || existing.tenantId !== tenantId) {
+        if (!existing) {
             return res.status(404).json({ success: false, message: 'Agent not found' });
+        }
+
+        if (!isAdmin && existing.tenantId !== userTenantId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized to delete this agent' });
         }
 
         // Delete agent profile and user account (cascades or separate delete)
@@ -204,12 +249,17 @@ const deleteAgent = async (req, res) => {
 const getAgentCommissions = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.user?.tenantId;
+        const isAdmin = req.user?.role === 2;
+        const userTenantId = req.user?.tenantId;
 
-        // Verify agent belongs to tenant
+        // Verify agent exists and belongs to tenant (or admin)
         const agent = await prisma.agent.findUnique({ where: { id } });
-        if (!agent || agent.tenantId !== tenantId) {
+        if (!agent) {
             return res.status(404).json({ success: false, message: 'Agent not found' });
+        }
+
+        if (!isAdmin && agent.tenantId !== userTenantId) {
+            return res.status(403).json({ success: false, message: 'Unauthorized to view these commissions' });
         }
 
         const commissions = await prisma.commission.findMany({
@@ -250,7 +300,7 @@ const assignLeadRoundRobin = async (tenantId, leadId) => {
                 status: 1 // Active
             },
             orderBy: [
-                { lastLeadAssignedAt: 'asc' }, // Nulls first usually, or oldest timestamp
+                { lastLeadAssignedAt: 'asc' }, // Nulls first usually
                 { createdAt: 'asc' }
             ]
         });
@@ -260,14 +310,19 @@ const assignLeadRoundRobin = async (tenantId, leadId) => {
         // 2. Select the first one
         const selectedAgent = agents[0];
 
-        // 3. Assign lead and update agent stats
+        // 3. Assign lead (VIA JUNCTION TABLE)
         await prisma.$transaction([
-            prisma.lead.update({
-                where: { id: leadId },
+            prisma.agentLead.create({
                 data: {
                     agentId: selectedAgent.id,
-                    assignedAt: new Date()
+                    leadId: leadId,
+                    isPrimary: true,
+                    status: 1 // Active
                 }
+            }),
+            prisma.lead.update({
+                where: { id: leadId },
+                data: { assignedAt: new Date() }
             }),
             prisma.agent.update({
                 where: { id: selectedAgent.id },
@@ -286,11 +341,323 @@ const assignLeadRoundRobin = async (tenantId, leadId) => {
     }
 };
 
+// --- Agent Dashboard Endpoints (Role 4) ---
+
+const getMyLeads = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+
+        // Find agent profile for this user
+        const agent = await prisma.agent.findUnique({
+            where: { userId }
+        });
+
+        if (!agent) {
+            return res.status(404).json({ success: false, message: 'Agent profile not found' });
+        }
+
+        // FETCH FROM JUNCTION TABLE
+        const assignments = await prisma.agentLead.findMany({
+            where: {
+                agentId: agent.id,
+                status: 1 // Only active assignments
+            },
+            include: {
+                lead: {
+                    include: {
+                        property: { select: { title: true } },
+                        unit: { select: { unitCode: true } }
+                    }
+                }
+            },
+            orderBy: { assignedAt: 'desc' }
+        });
+
+        // Flatten checks for compatibility if frontend expects direct lead usage
+        const leads = assignments.map(a => ({
+            ...a.lead,
+            assignedAt: a.assignedAt, // Use assignment time
+            isPrimary: a.isPrimary
+        }));
+
+        res.status(200).json({ success: true, data: { leads } });
+    } catch (error) {
+        console.error('Get my leads error:', error);
+        res.status(500).json({ success: false, message: 'Error fetching leads' });
+    }
+};
+
+const getMyCommissions = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+
+        const agent = await prisma.agent.findUnique({
+            where: { userId }
+        });
+
+        if (!agent) {
+            return res.status(404).json({ success: false, message: 'Agent profile not found' });
+        }
+
+        const commissions = await prisma.commission.findMany({
+            where: { agentId: agent.id },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                booking: {
+                    select: {
+                        id: true,
+                        startAt: true,
+                        totalPrice: true,
+                        unit: { select: { unitCode: true } }
+                    }
+                }
+            }
+        });
+
+        res.status(200).json({ success: true, data: { commissions } });
+    } catch (error) {
+        console.error('Get my commissions error:', error);
+        res.status(500).json({ success: false, message: 'Error fetching commissions' });
+    }
+};
+
+const updateAgentLeadStatus = async (req, res) => {
+    try {
+        const { id } = req.params; // lead ID
+        const { status, notes } = req.body;
+        const userId = req.user?.id;
+
+        const agent = await prisma.agent.findUnique({
+            where: { userId }
+        });
+
+        if (!agent) return res.status(404).json({ success: false, message: 'Agent not found' });
+
+        // Verify assignment exists via Junction Table
+        const assignment = await prisma.agentLead.findFirst({
+            where: {
+                agentId: agent.id,
+                leadId: id,
+                status: 1
+            }
+        });
+
+        if (!assignment) {
+            return res.status(404).json({ success: false, message: 'Lead assignment not found or inactive' });
+        }
+
+        const lead = await prisma.lead.findUnique({ where: { id } });
+
+        const updatedLead = await prisma.lead.update({
+            where: { id },
+            data: {
+                status: parseInt(status),
+                notes: notes ? `${lead.notes || ''}\n[Update ${new Date().toISOString()}]: ${notes}` : lead.notes
+            }
+        });
+
+        res.status(200).json({ success: true, message: 'Status updated', data: { lead: updatedLead } });
+    } catch (error) {
+        console.error('Update lead status error:', error);
+        res.status(500).json({ success: false, message: 'Error updating lead status' });
+    }
+};
+
+const getMyProfile = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const agent = await prisma.agent.findUnique({
+            where: { userId },
+            include: {
+                user: {
+                    select: {
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        phone: true
+                    }
+                }
+            }
+        });
+
+        res.status(200).json({ success: true, data: { agent } });
+    } catch (error) {
+        console.error('Get my profile error:', error);
+        res.status(500).json({ success: false, message: 'Error fetching profile' });
+    }
+};
+
+// Assign Property to Agent
+const assignProperty = async (req, res) => {
+    try {
+        const { agentId, propertyId, commissionRate, isPrimary, notes } = req.body;
+
+        // Ensure both exist
+        const [agent, property] = await Promise.all([
+            prisma.agent.findUnique({ where: { id: agentId } }),
+            prisma.property.findUnique({ where: { id: propertyId } })
+        ]);
+
+        if (!agent || !property) {
+            return res.status(404).json({ success: false, message: 'Agent or Property not found' });
+        }
+
+        // Check if already assigned
+        const existing = await prisma.agentProperty.findFirst({
+            where: { agentId, propertyId }
+        });
+
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Property already assigned to this agent' });
+        }
+
+        const assignment = await prisma.agentProperty.create({
+            data: {
+                agentId,
+                propertyId,
+                commissionRate: commissionRate || agent.commissionRate,
+                isPrimary: isPrimary || false,
+                notes,
+                status: 1 // Active
+            }
+        });
+
+        res.status(201).json({ success: true, message: 'Property assigned to agent', data: assignment });
+    } catch (error) {
+        console.error('Assign property error:', error);
+        res.status(500).json({ success: false, message: 'Error assigning property' });
+    }
+};
+
+// Get Agent Assignments
+const getAgentProperties = async (req, res) => {
+    try {
+        const { id } = req.params; // Agent ID
+        const assignments = await prisma.agentProperty.findMany({
+            where: { agentId: id },
+            include: {
+                property: {
+                    include: {
+                        mainImage: true
+                    }
+                }
+            }
+        });
+        res.status(200).json({ success: true, data: assignments });
+    } catch (error) {
+        console.error('Get agent properties error:', error);
+        res.status(500).json({ success: false, message: 'Error fetching assignments' });
+    }
+};
+
+// Unassign Property
+const unassignProperty = async (req, res) => {
+    try {
+        const { id } = req.params; // Assignment ID
+        await prisma.agentProperty.delete({
+            where: { id }
+        });
+        res.status(200).json({ success: true, message: 'Property unassigned' });
+    } catch (error) {
+        console.error('Unassign property error:', error);
+        res.status(500).json({ success: false, message: 'Error deleting assignment' });
+    }
+};
+
+// --- Lead Assignment Methods ---
+
+const assignLead = async (req, res) => {
+    try {
+        const { agentId, leadId, isPrimary, notes } = req.body;
+
+        const [agent, lead] = await Promise.all([
+            prisma.agent.findUnique({ where: { id: agentId } }),
+            prisma.lead.findUnique({ where: { id: leadId } })
+        ]);
+
+        if (!agent || !lead) return res.status(404).json({ success: false, message: 'Agent or Lead not found' });
+
+        const existing = await prisma.agentLead.findFirst({
+            where: { agentId, leadId }
+        });
+
+        if (existing) return res.status(400).json({ success: false, message: 'Lead already assigned to agent' });
+
+        const assignment = await prisma.agentLead.create({
+            data: {
+                agentId,
+                leadId,
+                isPrimary: isPrimary ?? true,
+                status: 1,
+                notes
+            }
+        });
+
+        // Update agent stats
+        await prisma.agent.update({
+            where: { id: agentId },
+            data: { totalLeads: { increment: 1 }, lastLeadAssignedAt: new Date() }
+        });
+
+        // Update lead assignedAt so we know it's handled
+        await prisma.lead.update({
+            where: { id: leadId },
+            data: { assignedAt: new Date() }
+        });
+
+        res.status(201).json({ success: true, message: 'Lead assigned', data: assignment });
+    } catch (error) {
+        console.error('Assign lead error:', error);
+        res.status(500).json({ success: false, message: 'Error assigning lead' });
+    }
+};
+
+const getAgentLeads = async (req, res) => {
+    try {
+        const { id } = req.params; // Agent ID
+        const assignments = await prisma.agentLead.findMany({
+            where: { agentId: id },
+            include: {
+                lead: {
+                    include: {
+                        property: { select: { title: true } }
+                    }
+                }
+            }
+        });
+        res.status(200).json({ success: true, data: assignments });
+    } catch (error) {
+        console.error('Get agent leads error:', error);
+        res.status(500).json({ success: false, message: 'Error fetching assignments' });
+    }
+};
+
+const unassignLead = async (req, res) => {
+    try {
+        const { id } = req.params; // Assignment ID
+        await prisma.agentLead.delete({ where: { id } });
+        res.status(200).json({ success: true, message: 'Lead unassigned' });
+    } catch (error) {
+        console.error('Unassign lead error:', error);
+        res.status(500).json({ success: false, message: 'Error unassigning lead' });
+    }
+};
+
 module.exports = {
     createAgent,
     getAllAgents,
     updateAgent,
     deleteAgent,
     getAgentCommissions,
-    assignLeadRoundRobin
+    assignLeadRoundRobin,
+    getMyLeads,
+    getMyCommissions,
+    updateAgentLeadStatus,
+    getMyProfile,
+    assignProperty,
+    getAgentProperties,
+    unassignProperty,
+    assignLead,
+    getAgentLeads,
+    unassignLead
 };

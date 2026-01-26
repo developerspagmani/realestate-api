@@ -73,7 +73,8 @@ const authorize = (...roles) => {
     const roleMap = {
       'USER': 1,
       'ADMIN': 2,
-      'OWNER': 3
+      'OWNER': 3,
+      'AGENT': 4
     };
 
     // Convert allowed roles to numeric
@@ -81,6 +82,7 @@ const authorize = (...roles) => {
 
     // Check if user role is in allowed roles
     if (!allowedRoles.includes(req.user.role)) {
+      console.log(`[Auth] Access Denied for User ${req.user.id}. Role: ${req.user.role}, Required: ${allowedRoles}`);
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient permissions.'
