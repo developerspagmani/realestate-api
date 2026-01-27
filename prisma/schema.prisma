@@ -65,6 +65,8 @@ model User {
   activationToken String?  @map("activation_token")
   isVerified   Boolean  @default(false) @map("is_verified")
   status       Int      @default(2) // 1: active, 2: inactive (pending verification), 3: suspended
+  resetPasswordToken String?  @map("reset_password_token")
+  resetPasswordExpires DateTime? @map("reset_password_expires")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
