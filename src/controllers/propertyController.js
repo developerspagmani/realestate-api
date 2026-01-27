@@ -23,7 +23,14 @@ const createProperty = async (req, res) => {
       area,
       floorPlanId,
       brochureId,
-      amenities
+      amenities,
+      yearBuilt,
+      neighborhood,
+      parkingSpaces,
+      bedrooms,
+      bathrooms,
+      lotSize,
+      listingType
     } = req.body;
 
     if (!tenantId || !propertyType || !title || !city || !state) {
@@ -65,7 +72,14 @@ const createProperty = async (req, res) => {
           brochureId: brochureId || null,
           propertyAmenities: {
             create: Array.isArray(amenities) ? [...new Set(amenities)].map(id => ({ amenityId: id })) : []
-          }
+          },
+          yearBuilt: yearBuilt ? parseInt(yearBuilt) : null,
+          neighborhood: neighborhood || null,
+          parkingSpaces: parkingSpaces ? parseInt(parkingSpaces) : null,
+          bedrooms: bedrooms ? parseInt(bedrooms) : null,
+          bathrooms: bathrooms ? parseInt(bathrooms) : null,
+          lotSize: lotSize ? parseInt(lotSize) : null,
+          listingType: listingType || 'Rent'
         }
       });
 
@@ -276,6 +290,11 @@ const updateProperty = async (req, res) => {
     if (updateData.area) updateData.area = parseInt(updateData.area);
     if (updateData.floorPlanId === '') updateData.floorPlanId = null;
     if (updateData.brochureId === '') updateData.brochureId = null;
+    if (updateData.yearBuilt) updateData.yearBuilt = parseInt(updateData.yearBuilt);
+    if (updateData.parkingSpaces) updateData.parkingSpaces = parseInt(updateData.parkingSpaces);
+    if (updateData.bedrooms) updateData.bedrooms = parseInt(updateData.bedrooms);
+    if (updateData.bathrooms) updateData.bathrooms = parseInt(updateData.bathrooms);
+    if (updateData.lotSize) updateData.lotSize = parseInt(updateData.lotSize);
 
     console.log('Update Property Request Debug:', {
       id,

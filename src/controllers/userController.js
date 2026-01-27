@@ -1,21 +1,9 @@
 const { prisma } = require('../config/database');
 const bcrypt = require('bcryptjs');
-const cacheService = require('../utils/cacheService');
 
 // Get user profile
 const getProfile = async (req, res) => {
   try {
-    const cacheKey = `user:${req.user.id}:profile`;
-
-    // Check cache
-    const cachedProfile = await cacheService.get(cacheKey);
-    if (cachedProfile) {
-      return res.status(200).json({
-        success: true,
-        data: { user: cachedProfile }
-      });
-    }
-
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
@@ -48,8 +36,7 @@ const getProfile = async (req, res) => {
       });
     }
 
-    // Set cache (5 minutes)
-    await cacheService.set(cacheKey, user, 300);
+
 
     res.status(200).json({
       success: true,

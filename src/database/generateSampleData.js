@@ -9,6 +9,12 @@ async function generateSampleData() {
 
   try {
     // 1. Clean existing data (respecting constraints)
+    await prisma.formBuilder.deleteMany();
+    await prisma.marketingWorkflow.deleteMany();
+    await prisma.campaignLog.deleteMany();
+    await prisma.campaign.deleteMany();
+    await prisma.audienceGroup.deleteMany();
+    await prisma.emailTemplate.deleteMany();
     await prisma.payment.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.media.deleteMany();
@@ -56,6 +62,7 @@ async function generateSampleData() {
     // 3. Create Modules
     const modules = await Promise.all([
       prisma.module.create({ data: { name: 'Widget Creator', slug: 'widget_creator', status: 1 } }),
+      prisma.module.create({ data: { name: 'Marketing Hub', slug: 'marketing_hub', status: 1 } }),
       prisma.module.create({ data: { name: 'Advanced Analytics', slug: 'analytics_pro', status: 1 } }),
       prisma.module.create({ data: { name: '3D Property Viewer', slug: '3d_viewer', status: 1 } }),
       prisma.module.create({ data: { name: 'Discovery Portal', slug: 'discovery', status: 1 } })
@@ -481,6 +488,51 @@ async function generateSampleData() {
         uniqueId: 'innovation-booking-widget',
         type: 'booking',
         configuration: { theme: { primaryColor: '#059669' }, display: { layout: 'list' } },
+        status: 1
+      }
+    });
+
+    // 10. Marketing Data
+    const group = await prisma.audienceGroup.create({
+      data: {
+        tenantId: tenantRE.id,
+        name: 'High Value Investors',
+        description: 'Leads interested in properties above $1M',
+        isDynamic: false
+      }
+    });
+
+    const template = await prisma.emailTemplate.create({
+      data: {
+        tenantId: tenantRE.id,
+        name: 'Welcome Template',
+        subject: 'Welcome to Elite Real Estate',
+        content: '<h1>Welcome!</h1><p>Thank you for your interest.</p>',
+        type: 'email'
+      }
+    });
+
+    await prisma.campaign.create({
+      data: {
+        tenantId: tenantRE.id,
+        name: 'Winter Promotion',
+        templateId: template.id,
+        groupId: group.id,
+        status: 1, // Draft
+      }
+    });
+
+    await prisma.formBuilder.create({
+      data: {
+        tenantId: tenantRE.id,
+        name: 'Contact Us',
+        configuration: {
+          title: 'Contact Us',
+          fields: [
+            { id: 'f1', label: 'Name', type: 'text', required: true },
+            { id: 'f2', label: 'Email', type: 'email', required: true }
+          ]
+        },
         status: 1
       }
     });

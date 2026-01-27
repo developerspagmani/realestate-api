@@ -40,6 +40,13 @@ model Tenant {
   widgets   Widget[]
   amenities Amenity[]
   agents    Agent[]
+  
+  // Marketing Module
+  emailTemplates    EmailTemplate[]
+  audienceGroups    AudienceGroup[]
+  campaigns         Campaign[]
+  marketingWorkflows MarketingWorkflow[]
+  formBuilders      FormBuilder[]
 
   @@map("tenants")
 }
@@ -322,6 +329,7 @@ model Lead {
   property    Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   agentLeads  AgentLead[]
+  audienceGroups AudienceGroup[] @relation("LeadAudienceGroups")
 
   @@map("leads")
 }
@@ -534,4 +542,111 @@ model AgentLead {
   lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("agent_leads")
+}
+
+// Marketing & Email Campaign Module
+model EmailTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid @map("tenant_id")
+  name      String
+  subject   String?
+  content   String   @db.Text // HTML or JSON configuration
+  type      String   @default("email") // email, whatsapp
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@map("email_templates")
+}
+
+model AudienceGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid @map("tenant_id")
+  name        String
+  description String?
+  isDynamic   Boolean  @default(false) @map("is_dynamic")
+  filters     Json?    // Conditions for dynamic groups
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leads       Lead[]   @relation("LeadAudienceGroups")
+  campaigns   Campaign[]
+
+  @@map("audience_groups")
+}
+
+model Campaign {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid @map("tenant_id")
+  name          String
+  templateId    String?  @db.Uuid @map("template_id")
+  groupId       String?  @db.Uuid @map("group_id")
+  status        Int      @default(1) // 1: Draft, 2: Scheduled, 3: Sending, 4: Sent, 5: Failed, 6: Cancelled
+  scheduledAt   DateTime? @map("scheduled_at")
+  sentAt        DateTime? @map("sent_at")
+  
+  // Tracking Stats
+  totalRecipients Int    @default(0) @map("total_recipients")
+  deliveredCount  Int    @default(0) @map("delivered_count")
+  openedCount     Int    @default(0) @map("opened_count")
+  clickedCount    Int    @default(0) @map("clicked_count")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template  EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  group     AudienceGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  logs      CampaignLog[]
+
+  @@map("campaigns")
+}
+
+model CampaignLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  campaignId  String   @db.Uuid @map("campaign_id")
+  leadId      String   @db.Uuid @map("lead_id")
+  status      String   // SENT, DELIVERED, OPENED, CLICKED, FAILED
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_logs")
+}
+
+model MarketingWorkflow {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid @map("tenant_id")
+  name        String
+  description String?
+  trigger     Json     // Workflow entry logic
+  steps       Json     // Node-based step configuration
+  status      Int      @default(1) // 1: Active, 2: Inactive
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_workflows")
+}
+
+model FormBuilder {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @db.Uuid @map("tenant_id")
+  name          String
+  configuration Json     // Form fields and design
+  targetGroupId String?  @db.Uuid @map("target_group_id") // Auto-add leads to this group
+  status        Int      @default(1) // 1: Active, 2: Inactive
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("form_builders")
 }

@@ -35,6 +35,8 @@ const property3DRoutes = require('./routes/property3D');
 const publicRoutes = require('./routes/public');
 const amenityRoutes = require('./routes/amenities');
 const agentRoutes = require('./routes/agents');
+const marketingRoutes = require('./routes/marketing');
+
 
 const errorHandler = require('./middleware/errorHandler');
 
@@ -96,6 +98,8 @@ app.use('/api/public', publicRoutes);
 app.use('/api/property-3d', property3DRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/agents', agentRoutes);
+app.use('/api/marketing', marketingRoutes);
+
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
