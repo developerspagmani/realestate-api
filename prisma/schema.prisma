@@ -304,9 +304,11 @@ model Lead {
   status        Int       @default(1) // 1: new, 2: contacted, 3: qualified, 4: converted, 5: lost
   priority      Int       @default(2) // 1: low, 2: medium, 3: high
   budget        Decimal?  @db.Decimal(15, 2)
+  leadScore     Int       @default(0) @map("lead_score")
   preferredDate DateTime? @map("preferred_date")
   assignedAt    DateTime? @map("assigned_at")
   notes         String?   @db.Text
+  preferences   Json?     @default("{}")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @default(now()) @map("updated_at")
 
@@ -317,8 +319,55 @@ model Lead {
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   agentLeads  AgentLead[]
   audienceGroups AudienceGroup[] @relation("LeadAudienceGroups")
+  interactions   LeadInteraction[]
+  enrollments    WorkflowEnrollment[]
 
   @@map("leads")
+}
+
+model WorkflowEnrollment {
+  id          String   @id @default(uuid()) @db.Uuid
+  workflowId  String   @db.Uuid @map("workflow_id")
+  leadId      String   @db.Uuid @map("lead_id")
+  currentStep String?  @map("current_step") // ID of the step in the JSON config
+  status      Int      @default(1) // 1: Active, 2: Completed, 3: Paused, 4: Cancelled
+  nextActionAt DateTime? @map("next_action_at")
+  enrolledAt  DateTime @default(now()) @map("enrolled_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  workflow    MarketingWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  lead        Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  logs        WorkflowLog[]
+
+  @@unique([workflowId, leadId])
+  @@map("workflow_enrollments")
+}
+
+model WorkflowLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  enrollmentId String   @db.Uuid @map("enrollment_id")
+  stepId       String   @map("step_id")
+  actionType   String   // EMAIL, SMS, DELAY, TAG
+  status       String   // SUCCESS, FAILED
+  result       Json?
+  occurredAt   DateTime @default(now()) @map("occurred_at")
+
+  enrollment   WorkflowEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_logs")
+}
+
+model LeadInteraction {
+  id          String   @id @default(uuid()) @db.Uuid
+  leadId      String   @db.Uuid @map("lead_id")
+  type        String   // EMAIL_OPEN, EMAIL_CLICK, PROPERTY_VIEW, FORM_SUBMIT, CHAT_INIT
+  metadata    Json?    // Store propertyId, campaignId, etc.
+  scoreWeight Int      @default(0) @map("score_weight")
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_interactions")
 }
 
 model UserPropertyAccess {
@@ -619,6 +668,7 @@ model MarketingWorkflow {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments WorkflowEnrollment[]
 
   @@map("marketing_workflows")
 }

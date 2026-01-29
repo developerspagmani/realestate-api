@@ -101,6 +101,7 @@ const getAllLeads = async (req, res) => {
           priority: true,
           status: true,
           budget: true,
+          leadScore: true,
           notes: true,
           createdAt: true,
           updatedAt: true,
@@ -117,6 +118,10 @@ const getAllLeads = async (req, res) => {
                 }
               }
             }
+          },
+          interactions: {
+            orderBy: { occurredAt: 'desc' },
+            take: 5
           },
           agentLeads: {
             where: { status: 1 },
@@ -199,6 +204,10 @@ const getLeadById = async (req, res) => {
             role: true,
             status: true,
           }
+        },
+        interactions: {
+          orderBy: { occurredAt: 'desc' },
+          take: 20
         },
         agentLeads: {
           where: { status: 1 },

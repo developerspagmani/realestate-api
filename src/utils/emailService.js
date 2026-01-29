@@ -106,7 +106,64 @@ const sendResetPasswordEmail = async (email, token, name) => {
     }
 };
 
+/**
+ * Send property recommendation email to a lead
+ */
+const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties) => {
+    try {
+        const propertyHtml = properties.map(p => `
+            <div style="margin-bottom: 20px; padding: 15px; background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <h3 style="margin-top: 0; color: #111827;">${p.title}</h3>
+                <p style="margin: 5px 0; font-size: 14px; color: #4b5563;">${p.city} | ${p.propertyType}</p>
+                <div style="margin: 10px 0;">
+                    <strong style="font-size: 12px; color: #6b7280; text-transform: uppercase;">Available Units:</strong>
+                    <ul style="padding-left: 20px; margin: 5px 0;">
+                        ${p.units.slice(0, 3).map(u => `
+                            <li style="font-size: 14px; color: #111827;">${u.unitCode}: <strong>$${Number(u.price).toLocaleString()}</strong></li>
+                        `).join('')}
+                    </ul>
+                </div>
+                <a href="${process.env.FRONTEND_URL}/properties/${p.id}" style="display: inline-block; background-color: #6366f1; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">View Details</a>
+            </div>
+        `).join('');
+
+        const mailOptions = {
+            from: `"${process.env.APP_NAME || 'RealEstate Admin'}" <${process.env.EMAIL_USER}>`,
+            to: leadEmail,
+            subject: 'Exciting Property Matches Just for You!',
+            html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 8px;">
+            <h2 style="color: #6366f1; text-align: center;">Top Matches Found!</h2>
+            <p style="font-size: 16px; line-height: 1.5; color: #333;">
+            Hello ${leadName},
+            <br><br>
+            Based on your recent interest and activity on our platform, our AI has hand-picked these properties that we think you'll love:
+            </p>
+            
+            ${propertyHtml}
+
+            <p style="font-size: 14px; color: #666; margin-top: 20px;">
+            If you'd like to see more or schedule a viewing, please reply to this email or contact your agent.
+            </p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="font-size: 12px; color: #999; text-align: center;">
+            &copy; ${new Date().getFullYear()} ${process.env.APP_NAME || 'RealEstate Platform'}. All rights reserved.
+            </p>
+        </div>
+        `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Recommendation email sent: %s', info.messageId);
+        return true;
+    } catch (error) {
+        console.error('Error sending recommendation email:', error);
+        return false;
+    }
+};
+
 module.exports = {
     sendActivationEmail,
-    sendResetPasswordEmail
+    sendResetPasswordEmail,
+    sendPropertyRecommendationEmail
 };

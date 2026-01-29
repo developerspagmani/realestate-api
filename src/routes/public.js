@@ -10,6 +10,7 @@ const publicController = require('../controllers/publicController');
  */
 
 const { getFormPublic } = require('../controllers/formBuilderController');
+const { trackInteraction } = require('../controllers/interactionController');
 
 // Property listing (unauthenticated)
 router.get('/properties', publicController.getProperties);
@@ -25,6 +26,9 @@ router.get('/units/:id', publicController.getUnitDetail);
 
 // Managed Forms (unauthenticated)
 router.get('/forms/:id', getFormPublic);
+
+// Interaction Tracking (unauthenticated but requires lead/tenant identifiers)
+router.post('/track', trackInteraction);
 
 module.exports = router;
 

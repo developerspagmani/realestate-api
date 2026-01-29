@@ -252,7 +252,8 @@ const getCampaignStats = async (req, res) => {
       totalCampaigns,
       sentCampaigns,
       draftCampaigns,
-      stats
+      stats,
+      totalSubmissions
     ] = await Promise.all([
       prisma.campaign.count({ where: { tenantId } }),
       prisma.campaign.count({ where: { tenantId, status: 4 } }),
@@ -264,7 +265,8 @@ const getCampaignStats = async (req, res) => {
           openedCount: true,
           clickedCount: true
         }
-      })
+      }),
+      prisma.lead.count({ where: { tenantId, source: 1 } })
     ]);
 
     res.status(200).json({
@@ -275,7 +277,8 @@ const getCampaignStats = async (req, res) => {
         draftCampaigns,
         totalDelivered: stats._sum.deliveredCount || 0,
         totalOpened: stats._sum.openedCount || 0,
-        totalClicked: stats._sum.clickedCount || 0
+        totalClicked: stats._sum.clickedCount || 0,
+        totalSubmissions: totalSubmissions || 0
       }
     });
   } catch (error) {

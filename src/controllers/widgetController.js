@@ -295,7 +295,6 @@ const widgetController = {
             }
 
             // Upsert or Check-Update to avoid duplicates for the same person
-            // We search for an existing lead with the same email or phone in this tenant
             let lead = await prisma.lead.findFirst({
                 where: {
                     tenantId: widget.tenantId,
@@ -307,7 +306,6 @@ const widgetController = {
             });
 
             if (lead) {
-                // Update existing lead notes with new activity
                 lead = await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
@@ -318,7 +316,6 @@ const widgetController = {
                     }
                 });
             } else {
-                // Create new lead
                 lead = await prisma.lead.create({
                     data: {
                         name: name || (source === 'widget_chatbot' ? 'Chatbot User' : 'Web Inquiry'),
@@ -329,10 +326,38 @@ const widgetController = {
                         tenantId: widget.tenantId,
                         propertyId,
                         unitId,
-                        status: 1 // New
+                        status: 1
                     }
                 });
             }
+
+            // Record the interaction
+            const interactionType = source === 'widget_chatbot' ? 'CHAT_INIT' : 'FORM_SUBMIT';
+            const scoreWeight = interactionType === 'CHAT_INIT' ? 10 : 20;
+
+            await prisma.$transaction(async (tx) => {
+                await tx.leadInteraction.create({
+                    data: {
+                        leadId: lead.id,
+                        type: interactionType,
+                        metadata: {
+                            propertyId,
+                            unitId,
+                            widgetId: widget.id,
+                            uniqueId
+                        },
+                        scoreWeight
+                    }
+                });
+
+                await tx.lead.update({
+                    where: { id: lead.id },
+                    data: {
+                        leadScore: { increment: scoreWeight },
+                        updatedAt: new Date()
+                    }
+                });
+            });
 
             res.json({ success: true, data: lead });
         } catch (error) {

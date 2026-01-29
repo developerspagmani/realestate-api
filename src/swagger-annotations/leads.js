@@ -38,7 +38,7 @@
  *         name: source
  *         schema:
  *           type: integer
- *           enum: [1, 2, 3, 4, 5, 6]
+ *           enum: [1, 2, 3, 4, 5, 6, 7]
  *         description: Filter by lead source
  *       - in: query
  *         name: propertyId
@@ -174,8 +174,8 @@
  *                 description: Lead message
  *               source:
  *                 type: integer
- *                 enum: [1, 2, 3, 4, 5, 6]
- *                 description: 1: website, 2: email, 3: phone, 4: social, 5: referral, 6: other
+ *                 enum: [1, 2, 3, 4, 5, 6, 7]
+ *                 description: 1: website, 2: email, 3: phone, 4: social, 5: referral, 6: other, 7: chatbot
  *               propertyId:
  *                 type: string
  *                 format: uuid

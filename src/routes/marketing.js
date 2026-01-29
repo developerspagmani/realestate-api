@@ -26,6 +26,12 @@ const {
     deleteForm
 } = require('../controllers/formBuilderController');
 const { getCampaignStats } = require('../controllers/campaignController');
+const { trackInteraction, getLeadInteractions } = require('../controllers/interactionController');
+const { runWorkflows, enrollInWorkflow, getEnrollments } = require('../controllers/workflowExecutionController');
+const {
+    getLeadRecommendations,
+    sendRecommendationEmailDirectly
+} = require('../controllers/recommendationController');
 
 const router = express.Router();
 
@@ -60,5 +66,18 @@ router.delete('/forms/:id', deleteForm);
 
 // Stats Routes
 router.get('/stats', getCampaignStats);
+
+// Interaction Tracking Routes
+router.post('/track', trackInteraction);
+router.get('/interactions/:id', getLeadInteractions);
+
+// Workflow Execution Routes
+router.post('/workflows/process', runWorkflows);
+router.post('/workflows/enroll', enrollInWorkflow);
+router.get('/workflows/:id/enrollments', getEnrollments);
+
+// AI Recommendation Routes
+router.get('/recommendations/:id', getLeadRecommendations);
+router.post('/recommendations/:id/send', sendRecommendationEmailDirectly);
 
 module.exports = router;

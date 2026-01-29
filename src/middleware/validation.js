@@ -356,8 +356,8 @@ const schemas = {
     company: Joi.string().max(100).optional().allow('', null),
     message: Joi.string().max(1000).optional().allow('', null),
     source: Joi.alternatives().try(
-      Joi.number().integer().valid(1, 2, 3, 4, 5, 6),
-      Joi.string().valid('website', 'phone', 'email', 'referral', 'social', 'other')
+      Joi.number().integer().valid(1, 2, 3, 4, 5, 6, 7),
+      Joi.string().valid('website', 'phone', 'email', 'referral', 'social', 'other', 'chatbot')
     ).default(1),
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).optional().default(1),
     priority: Joi.number().integer().valid(1, 2, 3).optional().default(2),
@@ -376,8 +376,8 @@ const schemas = {
     company: Joi.string().max(100).optional().allow('', null),
     message: Joi.string().max(1000).optional().allow('', null),
     source: Joi.alternatives().try(
-      Joi.number().integer().valid(1, 2, 3, 4, 5, 6),
-      Joi.string().valid('website', 'phone', 'email', 'referral', 'social', 'other')
+      Joi.number().integer().valid(1, 2, 3, 4, 5, 6, 7),
+      Joi.string().valid('website', 'phone', 'email', 'referral', 'social', 'other', 'chatbot')
     ).optional(),
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).optional(),
     priority: Joi.number().integer().valid(1, 2, 3).optional(),
