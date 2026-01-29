@@ -176,7 +176,6 @@ model Unit {
   mainImage    Media?    @relation("UnitMainImage", fields: [mainImageId], references: [id])
   unitPricing  UnitPricing[]
   realEstateDetails RealEstateUnitDetails?
-  coworkingDetails CoworkingUnitDetails?
   unitAmenities UnitAmenity[]
   bookings     Booking[]
   listings     Listing[]
@@ -214,18 +213,6 @@ model RealEstateUnitDetails {
   @@map("real_estate_unit_details")
 }
 
-model CoworkingUnitDetails {
-  unitId       String   @db.Uuid @map("unit_id")
-  seatType     Int?     @map("seat_type") // 1: desk, 2: cabin, 3: meeting room, 4: event space
-  pricingBasis Int?     @map("pricing_basis") // 1: per seat, 2: per unit, 3: per hour, 4: per day
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // Relations
-  unit         Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@id([unitId])
-  @@map("coworking_unit_details")
-}
 
 model Amenity {
   id        String   @id @default(uuid()) @db.Uuid

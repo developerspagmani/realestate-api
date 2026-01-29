@@ -48,13 +48,30 @@ const createUnit = async (req, res) => {
             }
         });
 
-        // Create unit pricing (Hourly, Daily, Monthly)
-        const { hourlyRate, dailyRate, monthlyRate, currency } = req.body;
+        // Real Estate Details
+        const { realEstateDetails } = req.body;
+        if (realEstateDetails) {
+            const parseVal = (v) => (v !== undefined && v !== null && v !== '') ? parseInt(v) : null;
+            await prisma.realEstateUnitDetails.create({
+                data: {
+                    unitId: unit.id,
+                    bedrooms: parseVal(realEstateDetails.bedrooms),
+                    bathrooms: parseVal(realEstateDetails.bathrooms),
+                    furnishing: parseVal(realEstateDetails.furnishing),
+                    parkingSlots: parseVal(realEstateDetails.parkingSlots),
+                    facing: parseVal(realEstateDetails.facing)
+                }
+            });
+        }
+
+        // Create unit pricing
+        const { hourlyRate, dailyRate, monthlyRate, price, currency } = req.body;
         const prices = [
+            { pricingModel: 1, price: parseFloat(price) || 0 }, // Fixed / Sale
             { pricingModel: 2, price: parseFloat(hourlyRate) || 0 },
             { pricingModel: 3, price: parseFloat(dailyRate) || 0 },
             { pricingModel: 4, price: parseFloat(monthlyRate) || 0 }
-        ];
+        ].filter(p => p.price > 0);
 
         for (const p of prices) {
             await prisma.unitPricing.create({
@@ -149,6 +166,7 @@ const getUnits = async (req, res) => {
                 where,
                 include: {
                     mainImage: true,
+                    realEstateDetails: true,
                     unitPricing: {
                         select: {
                             price: true,
@@ -216,6 +234,7 @@ const getUnitById = async (req, res) => {
             },
             include: {
                 mainImage: true,
+                realEstateDetails: true,
                 property: {
                     select: {
                         title: true,
@@ -289,13 +308,15 @@ const updateUnit = async (req, res) => {
         if (updateData.status) updateData.status = parseInt(updateData.status);
 
         // Extract root level individual rates if provided
-        const { hourlyRate, dailyRate, monthlyRate, currency, price, pricingModel } = updateData;
+        const { hourlyRate, dailyRate, monthlyRate, currency, price, pricingModel, realEstateDetails, unitAmenities } = updateData;
         delete updateData.hourlyRate;
         delete updateData.dailyRate;
         delete updateData.monthlyRate;
         delete updateData.currency;
         delete updateData.price;
         delete updateData.pricingModel;
+        delete updateData.realEstateDetails;
+        delete updateData.unitAmenities;
 
         console.log('Update Unit Request Debug:', {
             id,
@@ -310,17 +331,59 @@ const updateUnit = async (req, res) => {
                 data: updateData
             });
 
+            // Update Real Estate Details
+            const { realEstateDetails: reDetails } = req.body;
+            if (reDetails) {
+                const parseVal = (v) => (v !== undefined && v !== null && v !== '') ? parseInt(v) : (v === null ? null : undefined);
+
+                const existingRE = await tx.realEstateUnitDetails.findUnique({
+                    where: { unitId: id }
+                });
+
+                const reData = {
+                    bedrooms: parseVal(reDetails.bedrooms),
+                    bathrooms: parseVal(reDetails.bathrooms),
+                    furnishing: parseVal(reDetails.furnishing),
+                    parkingSlots: parseVal(reDetails.parkingSlots),
+                    facing: parseVal(reDetails.facing)
+                };
+
+                // Remove undefined values to avoid Prisma errors if we only want to update provided fields
+                Object.keys(reData).forEach(key => reData[key] === undefined && delete reData[key]);
+
+                if (existingRE) {
+                    await tx.realEstateUnitDetails.update({
+                        where: { unitId: id },
+                        data: reData
+                    });
+                } else {
+                    // For creation, we might want nulls instead of undefineds for missing fields
+                    const createData = {
+                        unitId: id,
+                        bedrooms: parseVal(reDetails.bedrooms) ?? null,
+                        bathrooms: parseVal(reDetails.bathrooms) ?? null,
+                        furnishing: parseVal(reDetails.furnishing) ?? null,
+                        parkingSlots: parseVal(reDetails.parkingSlots) ?? null,
+                        facing: parseVal(reDetails.facing) ?? null
+                    };
+                    await tx.realEstateUnitDetails.create({
+                        data: createData
+                    });
+                }
+            }
+
             console.log('Update Unit Success:', unit.id);
 
             // Update individual rates if provided
             const ratesToUpdate = [
+                { model: 1, val: price }, // Fixed / Sale
                 { model: 2, val: hourlyRate },
                 { model: 3, val: dailyRate },
                 { model: 4, val: monthlyRate }
             ];
 
             for (const rate of ratesToUpdate) {
-                if (rate.val !== undefined) {
+                if (rate.val !== undefined && rate.val !== null) {
                     const existing = await tx.unitPricing.findFirst({
                         where: { unitId: id, pricingModel: rate.model }
                     });

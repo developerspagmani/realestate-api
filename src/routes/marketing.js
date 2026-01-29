@@ -25,6 +25,7 @@ const {
     updateForm,
     deleteForm
 } = require('../controllers/formBuilderController');
+const { getCampaignStats } = require('../controllers/campaignController');
 
 const router = express.Router();
 
@@ -56,5 +57,8 @@ router.get('/forms', getAllForms);
 router.post('/forms', createForm);
 router.put('/forms/:id', updateForm);
 router.delete('/forms/:id', deleteForm);
+
+// Stats Routes
+router.get('/stats', getCampaignStats);
 
 module.exports = router;

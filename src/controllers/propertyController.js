@@ -117,7 +117,7 @@ const getProperties = async (req, res) => {
   try {
     const { page = 1, limit = 10, status, city, state, propertyType, tenantId: queryTenantId, ownerId, industryType, agentId } = req.query;
     const isAdmin = req.user.role === 2;
-    const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({
         success: false,
@@ -130,7 +130,7 @@ const getProperties = async (req, res) => {
     if (tenantId) where.tenantId = tenantId;
 
     if (industryType) {
-      where.tenantId = parseInt(industryType);
+      where.tenant = { type: parseInt(industryType) };
     }
 
     if (status) where.status = parseInt(status);
@@ -215,21 +215,14 @@ const getProperties = async (req, res) => {
 const getPropertyById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenantId: queryTenantId } = req.query;
-    const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+    const isAdmin = req.user.role === 2;
+    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
 
-    if (!tenantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tenant ID is required'
-      });
-    }
+    const where = { id };
+    if (tenantId) where.tenantId = tenantId;
 
-    const property = await prisma.property.findUnique({
-      where: {
-        id,
-        tenantId
-      },
+    const property = await prisma.property.findFirst({
+      where,
       include: {
         mainImage: true,
         floorPlan: true,
@@ -449,8 +442,8 @@ const getDefaultAmenities = async (unit_category) => {
 const getUnits = async (req, res) => {
   try {
     const { page = 1, limit = 10, propertyId, unitCategory, status, tenantId: queryTenantId, industryType, ownerId } = req.query;
-    const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
     const isAdmin = req.user.role === 2;
+    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
 
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({

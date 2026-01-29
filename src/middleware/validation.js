@@ -240,7 +240,14 @@ const schemas = {
     area: Joi.number().integer().min(0).optional().allow(null),
     floorPlanId: Joi.string().uuid().optional().allow('', null),
     brochureId: Joi.string().uuid().optional().allow('', null),
-    amenities: Joi.array().items(Joi.string().uuid()).optional().allow(null)
+    amenities: Joi.array().items(Joi.string().uuid()).optional().allow(null),
+    yearBuilt: Joi.number().integer().min(1800).max(new Date().getFullYear() + 5).optional().allow(null),
+    neighborhood: Joi.string().max(200).optional().allow('', null),
+    parkingSpaces: Joi.number().integer().min(0).optional().allow(null),
+    bedrooms: Joi.number().integer().min(0).optional().allow(null),
+    bathrooms: Joi.number().precision(1).min(0).optional().allow(null),
+    lotSize: Joi.number().precision(2).min(0).optional().allow(null),
+    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null)
   }),
 
   updateProperty: Joi.object({
@@ -263,7 +270,14 @@ const schemas = {
     area: Joi.number().integer().min(0).optional().allow(null),
     floorPlanId: Joi.string().uuid().optional().allow('', null),
     brochureId: Joi.string().uuid().optional().allow('', null),
-    amenities: Joi.array().items(Joi.string().uuid()).optional().allow(null)
+    amenities: Joi.array().items(Joi.string().uuid()).optional().allow(null),
+    yearBuilt: Joi.number().integer().min(1800).max(new Date().getFullYear() + 5).optional().allow(null),
+    neighborhood: Joi.string().max(200).optional().allow('', null),
+    parkingSpaces: Joi.number().integer().min(0).optional().allow(null),
+    bedrooms: Joi.number().integer().min(0).optional().allow(null),
+    bathrooms: Joi.number().precision(1).min(0).optional().allow(null),
+    lotSize: Joi.number().precision(2).min(0).optional().allow(null),
+    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null)
   }),
 
   assignProperty: Joi.object({
@@ -291,7 +305,15 @@ const schemas = {
     hourlyRate: Joi.number().optional(),
     dailyRate: Joi.number().optional(),
     monthlyRate: Joi.number().optional(),
-    currency: Joi.string().optional()
+    currency: Joi.string().optional(),
+    price: Joi.number().optional().allow(null),
+    realEstateDetails: Joi.object({
+      bedrooms: Joi.number().integer().min(0).optional().allow(null),
+      bathrooms: Joi.number().integer().min(0).optional().allow(null),
+      furnishing: Joi.number().integer().valid(1, 2, 3).optional().allow(null),
+      parkingSlots: Joi.number().integer().min(0).optional().allow(null),
+      facing: Joi.number().integer().min(1).max(8).optional().allow(null)
+    }).optional()
   }),
 
   updateUnit: Joi.object({
@@ -314,7 +336,15 @@ const schemas = {
     hourlyRate: Joi.number().optional(),
     dailyRate: Joi.number().optional(),
     monthlyRate: Joi.number().optional(),
-    currency: Joi.string().optional()
+    currency: Joi.string().optional(),
+    price: Joi.number().optional().allow(null),
+    realEstateDetails: Joi.object({
+      bedrooms: Joi.number().integer().min(0).optional().allow(null),
+      bathrooms: Joi.number().integer().min(0).optional().allow(null),
+      furnishing: Joi.number().integer().valid(1, 2, 3).optional().allow(null),
+      parkingSlots: Joi.number().integer().min(0).optional().allow(null),
+      facing: Joi.number().integer().min(1).max(8).optional().allow(null)
+    }).optional()
   }),
 
   // Lead schemas

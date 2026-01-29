@@ -88,9 +88,35 @@ const updateForm = async (req, res) => {
     }
 };
 
+// Get form for public view (unauthenticated)
+const getFormPublic = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const form = await prisma.formBuilder.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                configuration: true,
+                status: true
+            }
+        });
+
+        if (!form || form.status === 0) {
+            return res.status(404).json({ success: false, message: 'Form not found or inactive' });
+        }
+
+        res.status(200).json({ success: true, data: form });
+    } catch (error) {
+        console.error('Get public form error:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching form' });
+    }
+};
+
 module.exports = {
     getAllForms,
     createForm,
     updateForm,
-    deleteForm
+    deleteForm,
+    getFormPublic
 };

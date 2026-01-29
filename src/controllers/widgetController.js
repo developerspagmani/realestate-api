@@ -199,7 +199,6 @@ const widgetController = {
                         where: { status: 1 },
                         include: {
                             unitPricing: true,
-                            coworkingDetails: true,
                             realEstateDetails: true,
                             unitAmenities: {
                                 include: { amenity: true }

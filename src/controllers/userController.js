@@ -114,8 +114,8 @@ const getUsers = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const isAdmin = req.user.role === 2;
-    // For admins, only use provided tenantId filters, don't default to their account's tenantId
-    const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+    // For system admins, don't default to the request's tenant context unless explicitly requested via query
+    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
 
     // For system admins, tenantId is optional to see all users across tenants
     if (!tenantId && !isAdmin && !industryType) {
@@ -159,6 +159,7 @@ const getUsers = async (req, res) => {
           role: true,
           status: true,
           tenantId: true,
+          tenant: true,
           createdAt: true,
           updatedAt: true,
           _count: {
