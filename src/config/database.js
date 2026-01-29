@@ -4,10 +4,13 @@ if (!process.env.DATABASE_URL) {
   console.error('❌ DATABASE_URL is not defined in environment variables');
 }
 
+const isDev = process.env.NODE_ENV === 'development';
+
 const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
+  log: isDev ? ['error', 'warn'] : ['error'],
   errorFormat: 'pretty',
 });
+
 
 const connectDB = async () => {
   try {

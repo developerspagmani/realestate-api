@@ -1,5 +1,9 @@
 const { prisma } = require('../config/database');
 
+// Simple in-memory cache for tenants to avoid DB hits on every request
+const tenantCache = new Map();
+const CACHE_TTL = 60 * 1000 * 10; // 10 minutes
+
 // Get tenant by domain
 const getTenantByDomain = async (req, res, next) => {
   try {
@@ -50,8 +54,14 @@ const tenantMiddleware = async (req, res, next) => {
     const identifier = req.headers['x-tenant-domain'] || req.headers.host?.split(':')[0];
 
     if (!identifier) {
-      // For some global operations, identifier might be missing.
-      // Controllers should handle missing req.tenant if they need it.
+      return next();
+    }
+
+    // Check Cache
+    const cached = tenantCache.get(identifier);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+      req.tenant = cached.data;
+      req.prisma = prisma;
       return next();
     }
 
@@ -68,24 +78,20 @@ const tenantMiddleware = async (req, res, next) => {
       });
     }
 
-    if (!tenant) {
-      // If tenant not found, we don't attach it but we let the request continue.
-      // Controllers that require a tenant should check for req.tenant.
-      return next();
+    if (tenant) {
+      // Store in cache
+      tenantCache.set(identifier, {
+        data: tenant,
+        timestamp: Date.now()
+      });
+      req.tenant = tenant;
     }
 
-    // Attach tenant and database connection to request
-    req.tenant = tenant;
     req.prisma = prisma;
-
     next();
   } catch (error) {
     console.error('Tenant middleware error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error (middleware)',
-      debug: error.message
-    });
+    next(); // Don't crash the request if middleware fails
   }
 };
 
