@@ -51,16 +51,21 @@ const getTenantByDomain = async (req, res, next) => {
 // Middleware to attach tenant to all requests
 const tenantMiddleware = async (req, res, next) => {
   try {
-    const identifier = req.headers['x-tenant-domain'] || req.headers.host?.split(':')[0];
+    const identifier = req.headers['x-tenant-domain'] ||
+      req.query.tenantId ||
+      req.headers.host?.split(':')[0];
 
-    if (!identifier) {
+    if (!identifier || identifier === 'localhost' || identifier === '127.0.0.1') {
+      req.prisma = prisma;
       return next();
     }
 
     // Check Cache
     const cached = tenantCache.get(identifier);
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-      req.tenant = cached.data;
+      if (cached.data) {
+        req.tenant = cached.data;
+      }
       req.prisma = prisma;
       return next();
     }
@@ -78,12 +83,13 @@ const tenantMiddleware = async (req, res, next) => {
       });
     }
 
+    // Store in cache (even if null to prevent repeatedly hitting DB for invalid tenants)
+    tenantCache.set(identifier, {
+      data: tenant,
+      timestamp: Date.now()
+    });
+
     if (tenant) {
-      // Store in cache
-      tenantCache.set(identifier, {
-        data: tenant,
-        timestamp: Date.now()
-      });
       req.tenant = tenant;
     }
 
@@ -91,7 +97,7 @@ const tenantMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Tenant middleware error:', error);
-    next(); // Don't crash the request if middleware fails
+    next();
   }
 };
 

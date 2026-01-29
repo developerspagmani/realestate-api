@@ -29,26 +29,37 @@ const getDashboardStats = async (req, res) => {
     const isActuallyOwner = req.user.role === 3;
     const effectiveOwnerId = isActuallyOwner ? req.user.id : (isAdmin && ownerId ? ownerId : null);
 
+    // Initial parallel batch for flags and counts
+    let checkAccessPromise = Promise.resolve(0);
     if (effectiveOwnerId) {
-      // Check if this user has specific property access records
-      const hasAccessRecords = await prisma.userPropertyAccess.count({
+      checkAccessPromise = prisma.userPropertyAccess.count({
         where: { userId: effectiveOwnerId, tenantId: tenantId || undefined }
       });
+    }
 
-      if (hasAccessRecords > 0) {
-        finalOwnerFilter = {
-          userPropertyAccess: { some: { userId: effectiveOwnerId } }
-        };
-        finalBookingOwnerFilter = {
-          unit: { property: { userPropertyAccess: { some: { userId: effectiveOwnerId } } } }
-        };
-      }
+    const [hasAccessRecords, initialCounts] = await Promise.all([
+      checkAccessPromise,
+      Promise.all([
+        prisma.user.count({ where: { status: 1, ...whereBase, ...(ownerId ? { id: ownerId } : {}) } }),
+        prisma.user.count({ where: { role: 3, ...whereBase } }),
+        prisma.booking.count({ where: { status: 1, ...whereBase } }), // pendingBookingsCount
+      ])
+    ]);
+
+    const [totalUsers, totalOwners, pendingBookingsCount] = initialCounts;
+
+    if (effectiveOwnerId && hasAccessRecords > 0) {
+      finalOwnerFilter = {
+        userPropertyAccess: { some: { userId: effectiveOwnerId } }
+      };
+      finalBookingOwnerFilter = {
+        unit: { property: { userPropertyAccess: { some: { userId: effectiveOwnerId } } } }
+      };
     }
 
     const finalWhereBase = { ...whereBase };
 
     const [
-      totalUsers,
       totalProperties,
       totalUnits,
       totalBookings,
@@ -56,16 +67,8 @@ const getDashboardStats = async (req, res) => {
       completedBookings,
       totalRevenue,
       recentBookings,
-      topWorkspaces,
-      totalOwners
+      topWorkspaces
     ] = await Promise.all([
-      prisma.user.count({
-        where: {
-          status: 1,
-          ...finalWhereBase,
-          ...(ownerId ? { id: ownerId } : {})
-        }
-      }),
       prisma.property.count({
         where: {
           status: 1,
@@ -135,47 +138,33 @@ const getDashboardStats = async (req, res) => {
         _sum: { totalPrice: true },
         orderBy: { _count: { id: 'desc' } },
         take: 5
-      }),
-      prisma.user.count({
-        where: {
-          role: 3, // OWNER role
-          ...finalWhereBase
-        }
       })
     ]);
 
-    // Get unit details for top workspaces
-    const topWorkspaceDetails = await Promise.all(
-      topWorkspaces.map(async (item) => {
-        const unit = await prisma.unit.findUnique({
-          where: { id: item.unitId },
+    // Get unit details for top workspaces in one query
+    const topUnitIds = topWorkspaces.map(item => item.unitId);
+    const topUnitsFetched = topUnitIds.length > 0 ? await prisma.unit.findMany({
+      where: { id: { in: topUnitIds } },
+      select: {
+        id: true,
+        unitCode: true,
+        unitCategory: true,
+        property: {
           select: {
-            id: true,
-            unitCode: true,
-            unitCategory: true,
-            property: {
-              select: {
-                title: true,
-                city: true,
-              }
-            }
+            title: true,
+            city: true,
           }
-        });
-        return {
-          ...unit,
-          bookingCount: item._count.id,
-          totalRevenue: item._sum.totalPrice || 0,
-        };
-      })
-    );
-
-    // Calculate pending bookings (status: 1)
-    const pendingBookingsCount = await prisma.booking.count({
-      where: {
-        status: 1,
-        ...finalWhereBase,
-        ...finalBookingOwnerFilter
+        }
       }
+    }) : [];
+
+    const topWorkspaceDetails = topWorkspaces.map(item => {
+      const unit = topUnitsFetched.find(u => u.id === item.unitId);
+      return {
+        ...unit,
+        bookingCount: item._count.id,
+        totalRevenue: item._sum.totalPrice || 0,
+      };
     });
 
     // Calculate history for charts based on period
@@ -227,7 +216,6 @@ const getDashboardStats = async (req, res) => {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
       if (diffDays <= 2) {
-        // Hourly breakdown for very short ranges
         for (let i = 0; i < diffDays * 24; i += 4) {
           const s = new Date(start);
           s.setHours(s.getHours() + i);
@@ -236,7 +224,6 @@ const getDashboardStats = async (req, res) => {
           timeIntervals.push({ name: s.getHours() + ':00', start: s, end: e });
         }
       } else {
-        // Daily breakdown or group by steps
         const step = Math.max(1, Math.ceil(diffDays / 12));
         for (let i = 0; i < diffDays; i += step) {
           const s = new Date(start);
@@ -249,7 +236,6 @@ const getDashboardStats = async (req, res) => {
         }
       }
     } else {
-      // Default: Last 6 months
       for (let i = 5; i >= 0; i--) {
         const d = new Date();
         d.setDate(1);
@@ -275,25 +261,34 @@ const getDashboardStats = async (req, res) => {
       }
     }
 
-    const historicalData = await Promise.all(timeIntervals.map(async (m) => {
-      const [bookings, leads] = await Promise.all([
-        prisma.booking.count({
-          where: {
-            createdAt: { gte: m.start, lte: m.end },
-            ...finalWhereBase,
-            ...finalBookingOwnerFilter
-          }
-        }),
-        prisma.lead.count({
-          where: {
-            createdAt: { gte: m.start, lte: m.end },
-            ...finalWhereBase,
-            ...leadOwnerFilter
-          }
-        })
-      ]);
-      return { name: m.name, bookings, leads };
-    }));
+    // Optimize historical data fetching to 2 queries total instead of 2 * timeIntervals.length
+    const overallStart = timeIntervals[0].start;
+    const overallEnd = timeIntervals[timeIntervals.length - 1].end;
+
+    const [allBookingsInRange, allLeadsInRange] = await Promise.all([
+      prisma.booking.findMany({
+        where: {
+          createdAt: { gte: overallStart, lte: overallEnd },
+          ...finalWhereBase,
+          ...finalBookingOwnerFilter
+        },
+        select: { createdAt: true }
+      }),
+      prisma.lead.findMany({
+        where: {
+          createdAt: { gte: overallStart, lte: overallEnd },
+          ...finalWhereBase,
+          ...leadOwnerFilter
+        },
+        select: { createdAt: true }
+      })
+    ]);
+
+    const historicalData = timeIntervals.map(m => {
+      const bookingsCount = allBookingsInRange.filter(b => b.createdAt >= m.start && b.createdAt <= m.end).length;
+      const leadsCount = allLeadsInRange.filter(l => l.createdAt >= m.start && l.createdAt <= m.end).length;
+      return { name: m.name, bookings: bookingsCount, leads: leadsCount };
+    });
 
     res.status(200).json({
       success: true,

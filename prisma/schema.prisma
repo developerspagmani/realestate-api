@@ -87,6 +87,7 @@ model User {
   payments     Payment[]
   agent        Agent?
 
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -137,6 +138,7 @@ model Property {
   widgets      Widget[]
   agentProperties AgentProperty[]
 
+  @@index([tenantId])
   @@map("properties")
 }
 
@@ -181,6 +183,8 @@ model Unit {
   listings     Listing[]
   leads        Lead[]
 
+  @@index([tenantId])
+  @@index([propertyId])
   @@map("units")
 }
 
@@ -269,6 +273,10 @@ model Booking {
   payments        Payment[]
   commissions     Commission[]
 
+  @@index([tenantId])
+  @@index([unitId])
+  @@index([userId])
+  @@index([createdAt])
   @@map("bookings")
 }
 
@@ -322,6 +330,10 @@ model Lead {
   interactions   LeadInteraction[]
   enrollments    WorkflowEnrollment[]
 
+  @@index([tenantId])
+  @@index([propertyId])
+  @@index([userId])
+  @@index([createdAt])
   @@map("leads")
 }
 
@@ -427,6 +439,7 @@ model Media {
   propertyBrochures Property[] @relation("PropertyBrochure")
   unitMainImages     Unit[]     @relation("UnitMainImage")
 
+  @@index([tenantId])
   @@map("media")
 }
 
@@ -475,6 +488,8 @@ model Widget {
   tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
+  @@index([propertyId])
   @@map("widgets")
 }
 
@@ -528,6 +543,7 @@ model Agent {
   agentProperties AgentProperty[]
   agentLeads      AgentLead[]
 
+  @@index([tenantId])
   @@map("agents")
 }
 
@@ -543,6 +559,8 @@ model Commission {
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
+  @@index([agentId])
+  @@index([bookingId])
   @@map("commissions")
 }
 
@@ -595,6 +613,7 @@ model EmailTemplate {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   campaigns Campaign[]
 
+  @@index([tenantId])
   @@map("email_templates")
 }
 
@@ -612,6 +631,7 @@ model AudienceGroup {
   leads       Lead[]   @relation("LeadAudienceGroups")
   campaigns   Campaign[]
 
+  @@index([tenantId])
   @@map("audience_groups")
 }
 
@@ -639,6 +659,7 @@ model Campaign {
   group     AudienceGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   logs      CampaignLog[]
 
+  @@index([tenantId])
   @@map("campaigns")
 }
 
@@ -670,6 +691,7 @@ model MarketingWorkflow {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   enrollments WorkflowEnrollment[]
 
+  @@index([tenantId])
   @@map("marketing_workflows")
 }
 
@@ -685,5 +707,6 @@ model FormBuilder {
 
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("form_builders")
 }
