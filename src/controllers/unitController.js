@@ -144,19 +144,33 @@ const getUnits = async (req, res) => {
         }
 
         // Build where clause
-        const where = { tenantId };
-        if (propertyId) where.propertyId = propertyId;
+        const where = {};
+
+        // If propertyId is provided, it's the strongest filter and should show all units of that property for admins
+        if (propertyId) {
+            where.propertyId = propertyId;
+            // For non-admins or specific restrictive views, we still want to ensure they belong to the tenant
+            if (req.user.role !== 2 && tenantId) {
+                where.tenantId = tenantId;
+            }
+        } else {
+            // No propertyId, use tenant/owner filters
+            if (tenantId) {
+                where.tenantId = tenantId;
+            }
+
+            // Admin filtering by owner
+            if (ownerId && req.user.role === 2) {
+                where.property = {
+                    userPropertyAccess: {
+                        some: { userId: ownerId }
+                    }
+                };
+            }
+        }
+
         if (unitCategory) where.unitCategory = parseInt(unitCategory);
         if (status) where.status = parseInt(status);
-
-        // Admin filtering by owner
-        if (ownerId && req.user.role === 2) {
-            where.property = {
-                userPropertyAccess: {
-                    some: { userId: ownerId }
-                }
-            };
-        }
         // Removed restrictive check for owners (role 3) to allow them to see all units in their tenant.
 
         const skip = (parseInt(page) - 1) * parseInt(limit);

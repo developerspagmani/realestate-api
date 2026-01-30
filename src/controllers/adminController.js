@@ -622,7 +622,22 @@ const getAllProperties = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const where = {};
-    if (tenantId) where.tenantId = tenantId;
+
+    // For admins, we should be flexible with tenantId
+    if (isAdmin) {
+      if (queryTenantId) {
+        // If query explicitly has tenantId, filter by it
+        where.tenantId = queryTenantId;
+      }
+      // If no queryTenantId, we only add tenantId filter if not filtering by industry or owner or search
+      else if (!industryType && !ownerId && !search) {
+        where.tenantId = req.user?.tenantId;
+      }
+    } else {
+      // For non-admins, always force tenantId
+      if (tenantId) where.tenantId = tenantId;
+    }
+
     if (industryType) {
       where.tenant = { type: parseInt(industryType) };
     }
