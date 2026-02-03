@@ -54,14 +54,24 @@ const getProfile = async (req, res) => {
 // Update user profile (logged in user)
 const updateProfile = async (req, res) => {
   try {
-    const { name, phone } = req.body;
+    const { name, phone, email } = req.body;
+
+    // If email is changing, check if already exists
+    if (email && email !== req.user.email) {
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        return res.status(400).json({ success: false, message: 'Email already in use' });
+      }
+    }
+
+    const { password: _, passwordHash: __, ...updateData } = req.body;
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
       data: {
         ...(name && { name }),
         ...(phone && { phone }),
-        ...req.body // Spread body to catch all new fields like firstName, lastName, etc.
+        ...updateData
       },
       select: {
         id: true,

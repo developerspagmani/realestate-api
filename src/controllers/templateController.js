@@ -90,9 +90,45 @@ const updateTemplate = async (req, res) => {
     }
 };
 
+const sendTestEmail = async (req, res) => {
+    try {
+        const { templateId, email, subject, content } = req.body;
+        const { sendTemplateEmail } = require('../utils/emailService');
+
+        let finalSubject = subject;
+        let finalContent = content;
+
+        if (templateId) {
+            const template = await prisma.emailTemplate.findUnique({
+                where: { id: templateId }
+            });
+            if (template) {
+                finalSubject = template.subject;
+                finalContent = template.content;
+            }
+        }
+
+        // Replace basic placeholders for test
+        finalSubject = (finalSubject || 'Test Email').replace(/{{name}}/g, 'Valued Client');
+        finalContent = (finalContent || '').replace(/{{name}}/g, 'Valued Client');
+
+        const success = await sendTemplateEmail(email, finalSubject, finalContent);
+
+        if (success) {
+            res.status(200).json({ success: true, message: 'Test email sent successfully' });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to send test email' });
+        }
+    } catch (error) {
+        console.error('Send test email error:', error);
+        res.status(500).json({ success: false, message: 'Server error sending test email' });
+    }
+};
+
 module.exports = {
     getAllTemplates,
     createTemplate,
     updateTemplate,
-    deleteTemplate
+    deleteTemplate,
+    sendTestEmail
 };

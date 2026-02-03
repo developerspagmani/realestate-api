@@ -25,23 +25,66 @@ const getAllAudienceGroups = async (req, res) => {
     }
 };
 
+// Get single audience group by ID
+const getAudienceGroupById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant?.id;
+
+        const group = await prisma.audienceGroup.findFirst({
+            where: { id, tenantId },
+            include: {
+                leads: {
+                    select: { id: true, name: true, email: true }
+                },
+                _count: {
+                    select: { leads: true }
+                }
+            }
+        });
+
+        if (!group) {
+            return res.status(404).json({ success: false, message: 'Audience group not found' });
+        }
+
+        res.status(200).json({ success: true, data: group });
+    } catch (error) {
+        console.error('Get audience group by ID error:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching audience group' });
+    }
+};
+
 // Create audience group
 const createAudienceGroup = async (req, res) => {
     try {
         const tenantId = req.tenant?.id;
-        const { name, description, isDynamic, filters } = req.body;
+        const { name, description, isDynamic, filters, leadIds, propertyId, listingId } = req.body;
 
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
         }
+
+        // Combine property info into filters for storage
+        const extendedFilters = {
+            ...(filters || {}),
+            propertyId: propertyId || listingId
+        };
 
         const group = await prisma.audienceGroup.create({
             data: {
                 name,
                 description,
                 isDynamic: !!isDynamic,
-                filters: filters || {},
-                tenantId
+                filters: extendedFilters,
+                tenantId,
+                leads: leadIds && leadIds.length > 0 ? {
+                    connect: leadIds.map(id => ({ id }))
+                } : undefined
+            },
+            include: {
+                _count: {
+                    select: { leads: true }
+                }
             }
         });
 
@@ -74,27 +117,45 @@ const updateAudienceGroup = async (req, res) => {
     try {
         const { id } = req.params;
         const tenantId = req.tenant?.id;
-        const { name, description, isDynamic, filters } = req.body;
+        const { name, description, isDynamic, filters, leadIds, propertyId, listingId } = req.body;
 
-        const group = await prisma.audienceGroup.updateMany({
-            where: { id, tenantId },
+        const group = await prisma.audienceGroup.update({
+            where: {
+                id,
+                tenantId
+            },
             data: {
                 ...(name && { name }),
                 ...(description !== undefined && { description }),
                 ...(isDynamic !== undefined && { isDynamic: !!isDynamic }),
-                ...(filters && { filters })
+                filters: (filters || propertyId || listingId) ? {
+                    ...(filters || {}),
+                    propertyId: propertyId || listingId
+                } : undefined,
+                leads: leadIds ? {
+                    set: leadIds.map(id => ({ id }))
+                } : undefined
+            },
+            include: {
+                _count: {
+                    select: { leads: true }
+                }
             }
         });
 
         res.status(200).json({ success: true, message: 'Audience group updated successfully', data: group });
     } catch (error) {
         console.error('Update audience group error:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ success: false, message: 'Audience group not found or unauthorized' });
+        }
         res.status(500).json({ success: false, message: 'Server error updating audience group' });
     }
 };
 
 module.exports = {
     getAllAudienceGroups,
+    getAudienceGroupById,
     createAudienceGroup,
     updateAudienceGroup,
     deleteAudienceGroup

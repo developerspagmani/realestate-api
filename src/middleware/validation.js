@@ -58,6 +58,7 @@ const schemas = {
     addressLine1: Joi.string().optional().allow('', null),
     addressLine2: Joi.string().optional().allow('', null),
     phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional().allow('', null),
+    email: Joi.string().email().optional(),
     avatar: Joi.string().optional().allow('', null),
   }),
 

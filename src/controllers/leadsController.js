@@ -1,7 +1,6 @@
 const { prisma } = require('../config/database');
 const { assignLeadRoundRobin } = require('./agentController');
-
-// ... (rest of imports)
+const { sendLeadEmail } = require('../utils/emailService');
 
 // Get all leads (Admin/Owner only)
 const getAllLeads = async (req, res) => {
@@ -358,6 +357,41 @@ const createLead = async (req, res) => {
       if (assignedAgent) {
         console.log(`Lead ${lead.id} auto-assigned to Agent ${assignedAgent.id}`);
       }
+    }
+
+    // Send Notification if enabled in tenant settings
+    try {
+      const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+      const settings = tenant?.settings || {};
+      if (settings.notifications?.emailLeads) {
+        // Find tenant owner or admin email
+        const owner = await prisma.user.findFirst({
+          where: { tenantId, role: 3 }, // role 3 = OWNER
+          select: { email: true }
+        });
+        if (owner) {
+          await sendLeadEmail(owner.email, lead.name, {
+            email: lead.email,
+            phone: lead.phone,
+            message: lead.message
+          });
+        }
+      }
+
+      // Auto-enroll in matching marketing workflows
+      const WorkflowService = require('../services/marketing/WorkflowService');
+      const workflows = await prisma.marketingWorkflow.findMany({
+        where: { tenantId, status: 1 }
+      });
+
+      for (const wf of workflows) {
+        const trigger = typeof wf.trigger === 'string' ? JSON.parse(wf.trigger) : wf.trigger;
+        if (trigger?.type === 'LEAD_CREATED') {
+          await WorkflowService.enrollLead(wf.id, lead.id);
+        }
+      }
+    } catch (emailError) {
+      console.error('Error in lead creation extra processes:', emailError);
     }
 
     res.status(201).json({

@@ -79,16 +79,88 @@ class WorkflowService {
             switch (currentStep.type) {
                 case 'EMAIL':
                     // Logic to send email template
-                    console.log(`Sending email ${currentStep.templateId} to ${enrollment.lead.email}`);
-                    // In real implementation, call emailService here
+                    if (currentStep.templateId) {
+                        const template = await prisma.emailTemplate.findUnique({
+                            where: { id: currentStep.templateId }
+                        });
+
+                        if (template && enrollment.lead.email) {
+                            const { sendTemplateEmail } = require('../../utils/emailService');
+                            const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+                            // 1. Personalization
+                            let customizedContent = template.content;
+                            let subject = template.subject || 'Special Update';
+
+                            if (enrollment.lead.name) {
+                                customizedContent = customizedContent.replace(/{{name}}/gi, enrollment.lead.name);
+                                subject = subject.replace(/{{name}}/gi, enrollment.lead.name);
+                            } else {
+                                customizedContent = customizedContent.replace(/{{name}}/gi, 'Valued Client');
+                            }
+
+                            // 2. Click Tracking (Wrap Links)
+                            customizedContent = customizedContent.replace(/href="([^"]*)"/gi, (match, url) => {
+                                if (url.startsWith('mailto:') || url.startsWith('#') || !url.startsWith('http')) return match;
+                                const trackerUrl = `${baseUrl}/api/public/track/click?w=${enrollment.workflowId}&l=${enrollment.leadId}&u=${encodeURIComponent(url)}`;
+                                return `href="${trackerUrl}"`;
+                            });
+
+                            // 3. Open Tracking (Inject Pixel)
+                            const pixelUrl = `${baseUrl}/api/public/track/open?w=${enrollment.workflowId}&l=${enrollment.leadId}`;
+                            customizedContent += `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`;
+
+                            await sendTemplateEmail(enrollment.lead.email, subject, customizedContent);
+                        }
+                    }
+                    console.log(`Sending tracked email ${currentStep.templateId} to ${enrollment.lead.email}`);
                     break;
                 case 'DELAY':
                     delaySeconds = currentStep.delaySeconds || 3600;
                     break;
                 case 'TAG':
-                    // Add lead to a group or update status
+                    // Add/Remove lead tag
+                    if (currentStep.tag) {
+                        const currentTags = enrollment.lead.tags ? enrollment.lead.tags.split(',') : [];
+                        let newTags = [...currentTags];
+
+                        if (currentStep.action === 'add' && !newTags.includes(currentStep.tag)) {
+                            newTags.push(currentStep.tag);
+                        } else if (currentStep.action === 'remove') {
+                            newTags = newTags.filter(t => t !== currentStep.tag);
+                        }
+
+                        await prisma.lead.update({
+                            where: { id: enrollment.leadId },
+                            data: { tags: newTags.join(',') }
+                        });
+                    }
                     break;
-                default:
+                case 'ASSIGN':
+                    // Re-assign lead to specific agent or auto-assign
+                    if (currentStep.agentId) {
+                        let targetAgentId = currentStep.agentId;
+
+                        if (targetAgentId === 'auto') {
+                            const { assignLeadRoundRobin } = require('../../controllers/agentController');
+                            await assignLeadRoundRobin(enrollment.workflow.tenantId, enrollment.leadId);
+                        } else {
+                            // Deactivate existing
+                            await prisma.agentLead.updateMany({
+                                where: { leadId: enrollment.leadId, status: 1 },
+                                data: { status: 2 }
+                            });
+                            // Assign new
+                            await prisma.agentLead.create({
+                                data: {
+                                    agentId: targetAgentId,
+                                    leadId: enrollment.leadId,
+                                    isPrimary: true,
+                                    status: 1
+                                }
+                            });
+                        }
+                    }
                     break;
             }
 

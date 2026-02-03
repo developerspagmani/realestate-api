@@ -1,5 +1,6 @@
 const { prisma } = require('../config/database');
 const { calculateCommission } = require('./commissionController');
+const { sendBookingEmail } = require('../utils/emailService');
 
 const calculateTotalPrice = (startAt, endAt, unit) => {
   if (!unit || !unit.unitPricing || unit.unitPricing.length === 0) {
@@ -174,6 +175,23 @@ const createBooking = async (req, res) => {
 
       return { booking, totalPrice: finalPrice };
     });
+
+    // Send Notification if enabled in tenant settings
+    try {
+      const tenant = await prisma.tenant.findUnique({ where: { id: result.booking.tenantId } });
+      const settings = tenant?.settings || {};
+      if (settings.notifications?.emailBookings && result.booking.user?.email) {
+        await sendBookingEmail(result.booking.user.email, result.booking.user.name, {
+          unitCode: result.booking.unit.unitCode,
+          propertyName: result.booking.unit.property.title,
+          date: result.booking.startAt.toLocaleDateString(),
+          price: result.booking.totalPrice,
+          status: 'Confirmed'
+        });
+      }
+    } catch (emailError) {
+      console.error('Error in booking email notification:', emailError);
+    }
 
     res.status(201).json({
       success: true,
@@ -354,6 +372,24 @@ const updateBookingStatus = async (req, res) => {
     if (statusInt === 2 || statusInt === 4) {
       // Run in background, don't await response
       calculateCommission(booking.id).catch(err => console.error('Commission trigger error:', err));
+    }
+
+    // Send Notification for Confirmation
+    if (statusInt === 2) {
+      try {
+        const tenant = await prisma.tenant.findUnique({ where: { id: booking.tenantId } });
+        const settings = tenant?.settings || {};
+        if (settings.notifications?.emailBookings && booking.user?.email) {
+          await sendBookingEmail(booking.user.email, booking.user.name, {
+            unitCode: booking.unit.unitCode,
+            date: booking.startAt ? new Date(booking.startAt).toLocaleDateString() : 'N/A',
+            price: booking.totalPrice,
+            status: 'Confirmed'
+          });
+        }
+      } catch (emailError) {
+        console.error('Error in status update email notification:', emailError);
+      }
     }
 
     res.status(200).json({

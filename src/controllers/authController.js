@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
-const { sendActivationEmail, sendResetPasswordEmail } = require('../utils/emailService');
+const { sendActivationEmail, sendResetPasswordEmail, sendAccountConfirmationEmail } = require('../utils/emailService');
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -160,6 +160,9 @@ const verifyEmail = async (req, res) => {
         activationToken: null // Clear token after use (optional, or keep for audit)
       }
     });
+
+    // Send confirmation/welcome email
+    await sendAccountConfirmationEmail(user.email, user.firstName || user.name);
 
     res.status(200).json({
       success: true,

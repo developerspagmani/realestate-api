@@ -2,6 +2,7 @@ const express = require('express');
 const { auth, authorize } = require('../middleware/auth');
 const {
     getAllAudienceGroups,
+    getAudienceGroupById,
     createAudienceGroup,
     updateAudienceGroup,
     deleteAudienceGroup
@@ -10,7 +11,8 @@ const {
     getAllTemplates,
     createTemplate,
     updateTemplate,
-    deleteTemplate
+    deleteTemplate,
+    sendTestEmail
 } = require('../controllers/templateController');
 const {
     getAllWorkflows,
@@ -41,6 +43,7 @@ router.use(authorize(2, 3));
 
 // Audience Routes
 router.get('/audience', getAllAudienceGroups);
+router.get('/audience/:id', getAudienceGroupById);
 router.post('/audience', createAudienceGroup);
 router.put('/audience/:id', updateAudienceGroup);
 router.delete('/audience/:id', deleteAudienceGroup);
@@ -50,6 +53,7 @@ router.get('/templates', getAllTemplates);
 router.post('/templates', createTemplate);
 router.put('/templates/:id', updateTemplate);
 router.delete('/templates/:id', deleteTemplate);
+router.post('/templates/test', sendTestEmail);
 
 // Workflow Routes
 router.get('/workflows', getAllWorkflows);
