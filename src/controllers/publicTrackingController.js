@@ -45,7 +45,13 @@ const trackOpen = async (req, res) => {
 
     } catch (error) {
         console.error('Track open error:', error);
+        // Still return the pixel even on error to avoid broken image icons in email clients
         const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+        res.writeHead(200, {
+            'Content-Type': 'image/gif',
+            'Content-Length': pixel.length,
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
         res.end(pixel);
     }
 };

@@ -193,7 +193,13 @@ const launchCampaign = async (req, res) => {
 
           // 3. Open Tracking (Inject Pixel)
           const pixelUrl = `${baseUrl}/api/public/track/open?c=${campaignRecord.id}&l=${lead.id}`;
-          customizedContent += `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`;
+          const pixelTag = `<img src="${pixelUrl}" width="1" height="1" border="0" alt="" style="height:1px !important;width:1px !important;border-width:0 !important;margin:0 !important;padding:0 !important;" />`;
+
+          if (customizedContent.toLowerCase().includes('</body>')) {
+            customizedContent = customizedContent.replace(/<\/body>/i, `${pixelTag}</body>`);
+          } else {
+            customizedContent += pixelTag;
+          }
 
           const success = await sendTemplateEmail(lead.email, subject, customizedContent);
           if (success) {
