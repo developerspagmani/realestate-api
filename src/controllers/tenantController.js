@@ -3,6 +3,7 @@ const { prisma } = require('../config/database');
 // Simple in-memory cache for tenants to avoid DB hits on every request
 const tenantCache = new Map();
 const CACHE_TTL = 60 * 1000 * 10; // 10 minutes
+const MAX_CACHE_SIZE = 1000; // PERF-06 fix: Limit cache size to prevent memory leaks
 
 // Get tenant by domain
 const getTenantByDomain = async (req, res, next) => {
@@ -83,6 +84,12 @@ const tenantMiddleware = async (req, res, next) => {
       });
     }
 
+    // PERF-06 fix: Evict oldest entries if cache exceeds max size
+    if (tenantCache.size > MAX_CACHE_SIZE) {
+      const oldestKey = tenantCache.keys().next().value;
+      tenantCache.delete(oldestKey);
+    }
+
     // Store in cache (even if null to prevent repeatedly hitting DB for invalid tenants)
     tenantCache.set(identifier, {
       data: tenant,
@@ -97,7 +104,11 @@ const tenantMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Tenant middleware error:', error);
-    next();
+    // SEC-11 fix: Don't silently pass on DB errors — return error instead
+    return res.status(500).json({
+      success: false,
+      message: 'Internal error resolving tenant'
+    });
   }
 };
 

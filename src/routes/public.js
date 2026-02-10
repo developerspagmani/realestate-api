@@ -25,6 +25,9 @@ router.get('/units', publicController.getUnits);
 // Unit detail (unauthenticated)
 router.get('/units/:id', publicController.getUnitDetail);
 
+// Widgets listing (unauthenticated but requires tenantId)
+router.get('/widgets', publicController.getWidgets);
+
 // Managed Forms (unauthenticated)
 router.get('/forms/:id', getFormPublic);
 

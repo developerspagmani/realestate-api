@@ -39,7 +39,7 @@ const publicController = {
             res.json({ success: true, data: properties });
         } catch (error) {
             console.error('Public Listing Error:', error);
-            res.status(500).json({ success: false, message: 'Server error (listing)', debug: error.message });
+            res.status(500).json({ success: false, message: 'Server error (listing)' });
         }
     },
 
@@ -63,7 +63,6 @@ const publicController = {
                         where: { status: 1 },
                         include: {
                             unitPricing: true,
-                            coworkingDetails: true,
                             mainImage: true
                         }
                     }
@@ -93,7 +92,7 @@ const publicController = {
             res.json({ success: true, data: property });
         } catch (error) {
             console.error('Public Detail Error:', error);
-            res.status(500).json({ success: false, message: 'Server error (detail)', debug: error.message });
+            res.status(500).json({ success: false, message: 'Server error (detail)' });
         }
     },
 
@@ -149,7 +148,7 @@ const publicController = {
             res.json({ success: true, data: units });
         } catch (error) {
             console.error('Public Units Error:', error);
-            res.status(500).json({ success: false, message: 'Server error (units)', debug: error.message });
+            res.status(500).json({ success: false, message: 'Server error (units)' });
         }
     },
 
@@ -166,7 +165,6 @@ const publicController = {
                 where,
                 include: {
                     unitPricing: true,
-                    coworkingDetails: true,
                     realEstateDetails: true,
                     mainImage: true,
                     property: {
@@ -205,7 +203,39 @@ const publicController = {
             res.json({ success: true, data: unit });
         } catch (error) {
             console.error('Public Unit Detail Error:', error);
-            res.status(500).json({ success: false, message: 'Server error (unit-detail)', debug: error.message });
+            res.status(500).json({ success: false, message: 'Server error (unit-detail)' });
+        }
+    },
+
+    // Get widgets listing (Public but requires tenantId)
+    getWidgets: async (req, res) => {
+        try {
+            const { tenantId } = req.query;
+
+            if (!tenantId) {
+                return res.status(400).json({ success: false, message: 'Tenant ID is required.' });
+            }
+
+            const widgets = await prisma.widget.findMany({
+                where: {
+                    tenantId,
+                    status: 1
+                },
+                include: {
+                    property: {
+                        select: {
+                            id: true,
+                            title: true
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            res.json({ success: true, data: widgets });
+        } catch (error) {
+            console.error('Public Widgets Error:', error);
+            res.status(500).json({ success: false, message: 'Server error (widgets)' });
         }
     },
 };

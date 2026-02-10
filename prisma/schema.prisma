@@ -47,6 +47,7 @@ model Tenant {
   campaigns         Campaign[]
   marketingWorkflows MarketingWorkflow[]
   formBuilders      FormBuilder[]
+  propertyCategories PropertyCategory[]
 
   @@map("tenants")
 }
@@ -88,6 +89,7 @@ model User {
   agent        Agent?
 
   @@index([tenantId])
+  @@index([phone])
   @@map("users")
 }
 
@@ -95,6 +97,7 @@ model Property {
   id           String   @id @default(uuid()) @db.Uuid
   tenantId     String?  @db.Uuid @map("tenant_id")
   propertyType Int?     @map("property_type") // 1: residential, 2: commercial, 3: industrial, 4: mixed
+  categoryId   String?  @db.Uuid @map("category_id") // Reference to PropertyCategory
   title        String?
   slug         String?  @unique
   description  String?
@@ -106,6 +109,7 @@ model Property {
   postalCode   String?  @map("postal_code")
   latitude     Decimal? @db.Decimal(10, 7)
   longitude    Decimal? @db.Decimal(10, 7)
+  videoUrl     String?  @map("video_url") // YouTube video URL
   status       Int      @default(1) // 1: active, 2: inactive, 3: archived
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -126,6 +130,7 @@ model Property {
 
   // Relations
   tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  category     PropertyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   mainImage    Media?   @relation("PropertyMainImage", fields: [mainImageId], references: [id])
   floorPlan    Media?   @relation("PropertyFloorPlan", fields: [floorPlanId], references: [id])
   brochure     Media?   @relation("PropertyBrochure", fields: [brochureId], references: [id])
@@ -137,9 +142,35 @@ model Property {
   workspace3D  Property3DConfig?
   widgets      Widget[]
   agentProperties AgentProperty[]
+  metadata        Json?    @default("{}")
 
   @@index([tenantId])
+  @@index([categoryId])
   @@map("properties")
+}
+
+// Property Categories for organizing properties
+model PropertyCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid @map("tenant_id")
+  name        String
+  slug        String?
+  description String?
+  icon        String?  @default("bi-folder")
+  parentId    String?  @db.Uuid @map("parent_id")
+  sortOrder   Int      @default(0) @map("sort_order")
+  status      Int      @default(1) // 1: active, 2: inactive
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  parent      PropertyCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    PropertyCategory[] @relation("CategoryHierarchy")
+  properties  Property[]
+
+  @@index([tenantId])
+  @@map("property_categories")
 }
 
 model PropertyAmenity {
@@ -167,6 +198,7 @@ model Unit {
   status       Int      @default(1) // 1: available, 2: occupied, 3: maintenance, 4: inactive
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  metadata     Json?    @default("{}")
 
   // New fields
   mainImageId  String?  @db.Uuid @map("main_image_id")

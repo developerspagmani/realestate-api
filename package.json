@@ -1,7 +1,7 @@
 {
-  "name": "coworking-booking-api",
+  "name": "realestate-api",
   "version": "1.0.0",
-  "description": "Node.js API for Coworking Booking System",
+  "description": "Node.js API for Real Estate Management System",
   "main": "src/app.js",
   "scripts": {
     "dev": "nodemon src/app.js",
@@ -46,9 +46,10 @@
     "express",
     "prisma",
     "postgresql",
-    "coworking",
+    "real-estate",
+    "property-management",
     "booking"
   ],
-  "author": "Coworking Booking Team",
+  "author": "Virpanix Team",
   "license": "MIT"
 }

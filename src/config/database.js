@@ -6,10 +6,17 @@ if (!process.env.DATABASE_URL) {
 
 const isDev = process.env.NODE_ENV === 'development';
 
-const prisma = new PrismaClient({
+// PERF-05 fix: Cache Prisma client in globalThis to prevent new instances on each serverless invocation
+const globalForPrisma = globalThis;
+
+const prisma = globalForPrisma.prisma || new PrismaClient({
   log: isDev ? ['error', 'warn'] : ['error'],
   errorFormat: 'pretty',
 });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
 
 
 const connectDB = async () => {

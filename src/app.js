@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
-// Restart trigger
+// Restart trigger - forced update
 
 const { specs, swaggerUi } = require('./config/swagger');
 const { connectDB, disconnectDB, getDatabaseInfo } = require('./config/database');
@@ -36,6 +36,7 @@ const publicRoutes = require('./routes/public');
 const amenityRoutes = require('./routes/amenities');
 const agentRoutes = require('./routes/agents');
 const marketingRoutes = require('./routes/marketing');
+const categoryRoutes = require('./routes/categories');
 
 
 const errorHandler = require('./middleware/errorHandler');
@@ -59,7 +60,26 @@ const limiter = rateLimit({
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+  'http://localhost:3001',
+].filter(Boolean);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (server-to-server, mobile apps, curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  maxAge: 86400,
+}));
 app.use(morgan('dev'));
 
 app.use(limiter);
@@ -103,13 +123,14 @@ app.use('/api/property-3d', property3DRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/marketing', marketingRoutes);
+app.use('/api/categories', categoryRoutes);
 
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Multi-Tenant Real Estate & Co-working API Documentation',
+  customSiteTitle: 'Multi-Tenant Real Estate API Documentation',
 }));
 
 // Swagger JSON endpoint

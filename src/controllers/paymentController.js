@@ -52,15 +52,10 @@ const processPayment = async (req, res) => {
         throw new Error('Invalid payment amount');
       }
 
-      // Process payment (in real implementation, integrate with Stripe/PayPal)
-      let paymentStatus = 'COMPLETED';
-      let transactionId = `txn_${Date.now()}_${uuidv4().substring(0, 8)}`;
-
-      // Simulate payment processing
-      if (Math.random() < 0.05) { // 5% failure rate for demo
-        paymentStatus = 'FAILED';
-        transactionId = null;
-      }
+      // Process payment (FUNC-03 fix: removed random failure simulation)
+      // TODO: Integrate with Stripe/PayPal for real payment processing
+      const paymentStatus = 'COMPLETED';
+      const transactionId = `txn_${Date.now()}_${uuidv4().substring(0, 8)}`;
 
       // Create payment record
       const payment = await tx.payment.create({
@@ -75,14 +70,20 @@ const processPayment = async (req, res) => {
         }
       });
 
+      // FUNC-01 fix: Calculate totalPaid from existing completed payments
+      const existingPayments = await tx.payment.findMany({
+        where: { bookingId, status: 'COMPLETED' }
+      });
+      const totalPaid = existingPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+
       // Update booking payment status if fully paid
       const newTotalPaid = totalPaid + (paymentStatus === 'COMPLETED' ? amount : 0);
       let bookingPaymentStatus = booking.paymentStatus;
 
       if (newTotalPaid >= booking.totalPrice) {
-        bookingPaymentStatus = 'COMPLETED';
+        bookingPaymentStatus = 2; // PAID
       } else if (newTotalPaid > 0) {
-        bookingPaymentStatus = 'PARTIALLY_PAID';
+        bookingPaymentStatus = 3; // PARTIALLY_PAID
       }
 
       if (bookingPaymentStatus !== booking.paymentStatus) {
@@ -92,23 +93,9 @@ const processPayment = async (req, res) => {
         });
       }
 
-      // Create notification
-      await tx.notification.create({
-        data: {
-          userId: booking.userId,
-          title: paymentStatus === 'COMPLETED' ? 'Payment Received' : 'Payment Failed',
-          message: paymentStatus === 'COMPLETED'
-            ? `Payment of $${amount} for your booking has been received successfully.`
-            : `Payment of $${amount} for your booking has failed. Please try again.`,
-          type: paymentStatus === 'COMPLETED' ? 'PAYMENT_RECEIVED' : 'PAYMENT_FAILED',
-          data: {
-            bookingId,
-            paymentId: payment.id,
-            amount,
-            status: paymentStatus,
-          }
-        }
-      });
+      // DB-02 fix: Notification model doesn't exist in schema yet
+      // Log the notification instead of creating a DB record
+      console.log(`[Payment Notification] User: ${booking.userId}, Status: ${paymentStatus}, Amount: $${amount}, BookingId: ${bookingId}`);
 
       return { payment, booking };
     });
@@ -137,16 +124,17 @@ const getPaymentById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // FUNC-02 fix: Changed seats→unit, fixed user field names
     const payment = await prisma.payment.findUnique({
       where: { id },
       include: {
         booking: {
           include: {
-            seats: {
+            unit: {
               select: {
                 id: true,
-                name: true,
-                type: true,
+                unitCode: true,
+                unitCategory: true,
               }
             }
           }
@@ -154,8 +142,7 @@ const getPaymentById = async (req, res) => {
         user: {
           select: {
             id: true,
-            firstName: true,
-            lastName: true,
+            name: true,
             email: true,
           }
         }
@@ -169,8 +156,8 @@ const getPaymentById = async (req, res) => {
       });
     }
 
-    // Check if user has permission to view this payment
-    if (payment.userId !== req.user.id && req.user.role !== 'ADMIN' && req.user.role !== 'OWNER') {
+    // SEC-08 fix: Use numeric role comparison instead of string
+    if (payment.userId !== req.user.id && req.user.role !== 2 && req.user.role !== 3) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
@@ -222,14 +209,14 @@ const getUserPayments = async (req, res) => {
           booking: {
             select: {
               id: true,
-              startDate: true,
-              endDate: true,
+              startAt: true,
+              endAt: true,
               status: true,
-              seats: {
+              unit: {
                 select: {
                   id: true,
-                  name: true,
-                  type: true,
+                  unitCode: true,
+                  unitCategory: true,
                 }
               }
             }
@@ -351,11 +338,11 @@ const getAllPayments = async (req, res) => {
               id: true,
               status: true,
               totalPrice: true,
-              seats: {
+              unit: {
                 select: {
                   id: true,
-                  name: true,
-                  type: true,
+                  unitCode: true,
+                  unitCategory: true,
                 }
               }
             }
@@ -453,21 +440,8 @@ const processRefund = async (req, res) => {
         data: { paymentStatus: bookingPaymentStatus }
       });
 
-      // Create notification
-      await tx.notification.create({
-        data: {
-          userId: payment.booking.userId,
-          title: 'Payment Refunded',
-          message: `A refund of $${amount} has been processed for your booking. ${reason ? `Reason: ${reason}` : ''}`,
-          type: 'PAYMENT_FAILED', // Using existing type
-          data: {
-            bookingId: payment.bookingId,
-            paymentId: payment.id,
-            refundAmount: amount,
-            reason,
-          }
-        }
-      });
+      // DB-02 fix: Notification model doesn't exist in schema
+      console.log(`[Refund Notification] User: ${payment.booking.userId}, Amount: $${amount}, PaymentId: ${payment.id}`);
 
       return { payment: updatedPayment, booking: payment.booking };
     });

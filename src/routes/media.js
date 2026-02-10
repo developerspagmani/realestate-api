@@ -2,12 +2,25 @@ const express = require('express');
 const path = require('path');
 const multer = require('multer');
 const { auth, authorize } = require('../middleware/auth');
+const { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } = require('../constants');
 
 const fs = require('fs');
 
-// Configure multer storage
+// SEC-05 fix: Configure multer with file type and size validation
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: MAX_FILE_SIZE, // 10MB max
+  },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: images, videos, audio, PDF, and office documents.`), false);
+    }
+  }
+});
 
 const {
   getAllMedia,

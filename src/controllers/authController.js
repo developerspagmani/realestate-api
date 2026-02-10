@@ -4,11 +4,50 @@ const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
 const { sendActivationEmail, sendResetPasswordEmail, sendAccountConfirmationEmail } = require('../utils/emailService');
 
-// Generate JWT token
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
+// Generate JWT token (includes role for frontend middleware authorization)
+const generateToken = (userId, role) => {
+  return jwt.sign({ userId, role }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
+};
+
+// SEC-09 fix: In-memory brute force protection
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+const checkLoginAttempts = (identifier) => {
+  const attempts = loginAttempts.get(identifier);
+  if (!attempts) return { allowed: true };
+
+  // Reset if lockout expired
+  if (attempts.lockedUntil && Date.now() > attempts.lockedUntil) {
+    loginAttempts.delete(identifier);
+    return { allowed: true };
+  }
+
+  if (attempts.lockedUntil) {
+    const remainingMs = attempts.lockedUntil - Date.now();
+    const remainingMins = Math.ceil(remainingMs / 60000);
+    return { allowed: false, remainingMins };
+  }
+
+  return { allowed: true };
+};
+
+const recordFailedLogin = (identifier) => {
+  const attempts = loginAttempts.get(identifier) || { count: 0 };
+  attempts.count += 1;
+
+  if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+    attempts.lockedUntil = Date.now() + LOCKOUT_DURATION;
+  }
+
+  loginAttempts.set(identifier, attempts);
+};
+
+const clearLoginAttempts = (identifier) => {
+  loginAttempts.delete(identifier);
 };
 
 // Register user (and optional Tenant)
@@ -182,6 +221,16 @@ const verifyEmail = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, phone, password } = req.body;
+    const loginIdentifier = email || phone;
+
+    // SEC-09: Check brute force lockout
+    const attemptCheck = checkLoginAttempts(loginIdentifier);
+    if (!attemptCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        message: `Account temporarily locked due to too many failed attempts. Try again in ${attemptCheck.remainingMins} minute(s).`
+      });
+    }
 
     // Find user by email OR phone
     const user = await prisma.user.findFirst({
@@ -194,6 +243,7 @@ const login = async (req, res) => {
     });
 
     if (!user) {
+      recordFailedLogin(loginIdentifier);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -242,14 +292,18 @@ const login = async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
+      recordFailedLogin(loginIdentifier);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
+    // SEC-09: Clear failed attempts on successful login
+    clearLoginAttempts(loginIdentifier);
+
     // Generate token
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     // Update last login (if you have this field)
     // await prisma.user.update({

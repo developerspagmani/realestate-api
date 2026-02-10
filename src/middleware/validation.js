@@ -248,7 +248,10 @@ const schemas = {
     bedrooms: Joi.number().integer().min(0).optional().allow(null),
     bathrooms: Joi.number().precision(1).min(0).optional().allow(null),
     lotSize: Joi.number().precision(2).min(0).optional().allow(null),
-    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null)
+    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null),
+    categoryId: Joi.string().uuid().optional().allow('', null),
+    videoUrl: Joi.string().uri().optional().allow('', null),
+    metadata: Joi.any().optional()
   }),
 
   updateProperty: Joi.object({
@@ -278,7 +281,10 @@ const schemas = {
     bedrooms: Joi.number().integer().min(0).optional().allow(null),
     bathrooms: Joi.number().precision(1).min(0).optional().allow(null),
     lotSize: Joi.number().precision(2).min(0).optional().allow(null),
-    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null)
+    listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null),
+    categoryId: Joi.string().uuid().optional().allow('', null),
+    videoUrl: Joi.string().uri().optional().allow('', null),
+    metadata: Joi.any().optional()
   }),
 
   assignProperty: Joi.object({
@@ -429,6 +435,12 @@ const schemas = {
   updateAgentLeadStatus: Joi.object({
     status: Joi.number().integer().valid(1, 2, 3, 4, 5).required(),
     notes: Joi.string().max(1000).optional().allow('', null),
+  }),
+
+  // SEC-07 fix: Password update schema (was missing, referenced in routes/auth.js)
+  updatePassword: Joi.object({
+    currentPassword: Joi.string().required(),
+    newPassword: Joi.string().min(6).max(128).required(),
   }),
 };
 

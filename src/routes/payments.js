@@ -18,11 +18,13 @@ router.use(auth);
 // User payment routes
 router.post('/', validate(schemas.processPayment), processPayment);
 router.get('/my', getUserPayments);
-router.get('/:id', getPaymentById);
 
-// Admin/Owner routes
+// Admin/Owner routes — FUNC-06 fix: stats BEFORE /:id to prevent shadowing
+router.get('/stats', authorize('ADMIN', 'OWNER'), getPaymentStats);
 router.get('/', authorize('ADMIN', 'OWNER'), getAllPayments);
 router.post('/:id/refund', authorize('ADMIN', 'OWNER'), processRefund);
-router.get('/stats', authorize('ADMIN', 'OWNER'), getPaymentStats);
+
+// Must be last to not shadow named routes
+router.get('/:id', getPaymentById);
 
 module.exports = router;

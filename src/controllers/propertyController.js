@@ -30,7 +30,9 @@ const createProperty = async (req, res) => {
       bedrooms,
       bathrooms,
       lotSize,
-      listingType
+      listingType,
+      categoryId,
+      videoUrl
     } = req.body;
 
     if (!tenantId || !propertyType || !title || !city || !state) {
@@ -79,7 +81,9 @@ const createProperty = async (req, res) => {
           bedrooms: bedrooms ? parseInt(bedrooms) : null,
           bathrooms: bathrooms ? parseInt(bathrooms) : null,
           lotSize: lotSize ? parseInt(lotSize) : null,
-          listingType: listingType || 'Rent'
+          listingType: listingType || 'Rent',
+          categoryId: categoryId && categoryId !== '' ? categoryId : null,
+          videoUrl: videoUrl || null
         }
       });
 
@@ -215,6 +219,7 @@ const getProperties = async (req, res) => {
 const getPropertyById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { tenantId: queryTenantId } = req.query;
     const isAdmin = req.user.role === 2;
     const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
 
@@ -288,6 +293,7 @@ const updateProperty = async (req, res) => {
     if (updateData.bedrooms) updateData.bedrooms = parseInt(updateData.bedrooms);
     if (updateData.bathrooms) updateData.bathrooms = parseInt(updateData.bathrooms);
     if (updateData.lotSize) updateData.lotSize = parseInt(updateData.lotSize);
+    if (updateData.categoryId === '') updateData.categoryId = null;
 
     console.log('Update Property Request Debug:', {
       id,
