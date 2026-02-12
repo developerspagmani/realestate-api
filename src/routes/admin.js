@@ -7,6 +7,9 @@ const {
   createSpace,
   getSystemAnalytics,
   getAllProperties,
+  getSystemSettings,
+  updateSystemSetting,
+  extendTrial
 } = require('../controllers/adminController');
 
 const {
@@ -24,12 +27,15 @@ const {
 
 const router = express.Router();
 
-// All routes are accessible by Admin and Owners (who manage their own data)
-router.use(auth);
-router.use(authorize('ADMIN', 'OWNER'));
+// Dashboard (Admin and Owners)
+router.get('/dashboard', auth, getDashboardStats);
 
-// Dashboard
-router.get('/dashboard', getDashboardStats);
+// Settings (Admin only)
+router.get('/settings', auth, authorize('ADMIN'), getSystemSettings);
+router.post('/settings', auth, authorize('ADMIN'), updateSystemSetting);
+
+// Trial Extension (Admin only)
+router.post('/tenants/extend-trial', auth, authorize('ADMIN'), extendTrial);
 
 // User management
 router.get('/users', getUsers);

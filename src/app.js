@@ -37,6 +37,9 @@ const amenityRoutes = require('./routes/amenities');
 const agentRoutes = require('./routes/agents');
 const marketingRoutes = require('./routes/marketing');
 const categoryRoutes = require('./routes/categories');
+const planRoutes = require('./routes/plans');
+const licenseKeyRoutes = require('./routes/licenseKeys');
+
 
 
 const errorHandler = require('./middleware/errorHandler');
@@ -124,6 +127,9 @@ app.use('/api/amenities', amenityRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/plans', planRoutes);
+app.use('/api/license-keys', licenseKeyRoutes);
+
 
 
 // Swagger Documentation

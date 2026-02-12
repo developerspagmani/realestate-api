@@ -127,11 +127,18 @@ const ALLOWED_MIME_TYPES = Object.freeze([
 // Max file upload size in bytes (10MB)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+const SubscriptionStatus = Object.freeze({
+  ACTIVE: 1,
+  EXPIRED: 2,
+  TRIAL: 3,
+});
+
 module.exports = {
   UserRole,
   BookingStatus,
   PaymentStatus,
   UserStatus,
+  SubscriptionStatus,
   PropertyType,
   PropertyStatus,
   UnitStatus,

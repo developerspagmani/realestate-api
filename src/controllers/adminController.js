@@ -725,6 +725,58 @@ const createUser = async (req, res) => {
   }
 };
 
+// Get all system settings
+const getSystemSettings = async (req, res) => {
+  try {
+    const settings = await prisma.systemSetting.findMany();
+    res.status(200).json({ success: true, data: settings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching settings' });
+  }
+};
+
+// Update/Create system setting
+const updateSystemSetting = async (req, res) => {
+  try {
+    const { key, value, type } = req.body;
+    const setting = await prisma.systemSetting.upsert({
+      where: { key },
+      update: { value, type },
+      create: { key, value, type }
+    });
+    res.status(200).json({ success: true, data: setting });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error updating setting' });
+  }
+};
+
+// Extend trial for a tenant
+const extendTrial = async (req, res) => {
+  try {
+    const { tenantId, days } = req.body;
+    if (!tenantId || !days) return res.status(400).json({ success: false, message: 'Missing tenantId or days' });
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+    const currentExpiry = tenant.subscriptionExpiresAt || new Date();
+    const newExpiry = new Date(currentExpiry.getTime() + (parseInt(days) * 24 * 60 * 60 * 1000));
+
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        subscriptionExpiresAt: newExpiry,
+        subscriptionStatus: 3 // Ensure it's in trial mode
+      }
+    });
+
+    res.status(200).json({ success: true, message: `Trial extended by ${days} days` });
+  } catch (error) {
+    console.error('Extend trial error:', error);
+    res.status(500).json({ success: false, message: 'Error extending trial' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllUsers,
@@ -735,5 +787,8 @@ module.exports = {
   getAllSpaces,
   createSpace,
   getSystemAnalytics,
-  getAllProperties
+  getAllProperties,
+  getSystemSettings,
+  updateSystemSetting,
+  extendTrial
 };

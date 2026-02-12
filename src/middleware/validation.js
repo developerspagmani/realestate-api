@@ -37,7 +37,10 @@ const schemas = {
     addressLine2: Joi.string().optional().allow('', null),
     phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional().allow('', null),
     type: Joi.number().integer().valid(1, 2).optional(),
+    planId: Joi.string().uuid().optional(),
+    licenseKey: Joi.string().optional(),
   }),
+
 
   login: Joi.object({
     email: Joi.string().email().optional(),
@@ -373,6 +376,7 @@ const schemas = {
     budget: Joi.number().min(0).optional().allow(null),
     preferredDate: Joi.date().optional().allow(null),
     notes: Joi.string().max(1000).optional().allow('', null),
+    agentId: Joi.string().uuid().optional().allow('', null),
   }),
 
   updateLead: Joi.object({
@@ -393,6 +397,7 @@ const schemas = {
     budget: Joi.number().min(0).optional().allow(null),
     preferredDate: Joi.date().optional().allow(null),
     notes: Joi.string().max(1000).optional().allow('', null),
+    agentId: Joi.string().uuid().optional().allow('', null),
   }),
 
   assignLead: Joi.object({

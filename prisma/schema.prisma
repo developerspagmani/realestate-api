@@ -21,12 +21,16 @@ model Tenant {
   country   String?
   postalCode String? @map("postal_code")
   status    Int      @default(1) // 1: active, 2: inactive, 3: suspended
-  plan      String?  @default("basic")
+  planId    String?  @db.Uuid @map("plan_id")
+  subscriptionStatus Int @default(1) // 1: Active, 2: Expired, 3: Trial
+  subscriptionExpiresAt DateTime? @map("subscription_expires_at")
   settings  Json?    @default("{}")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
+  plan      Plan?    @relation(fields: [planId], references: [id])
+  licenseKey LicenseKey?
   users     User[]
   properties Property[]
   units     Unit[]
@@ -51,6 +55,55 @@ model Tenant {
 
   @@map("tenants")
 }
+
+model SystemSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     String
+  type      String   @default("string") // string, number, boolean, json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model Plan {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  interval    String   @default("yearly") // yearly, monthly
+  status      Int      @default(1) // 1: active, 2: inactive
+  features    Json?    @default("{}") // e.g. { "maxProperties": 10, "3dEnabled": true }
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenants     Tenant[]
+  licenseKeys LicenseKey[]
+  modules     Module[]
+
+  @@map("plans")
+}
+
+model LicenseKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  planId      String   @db.Uuid @map("plan_id")
+  status      Int      @default(1) // 1: unused, 2: used, 3: void
+  tenantId    String?  @unique @db.Uuid @map("tenant_id")
+  activatedAt DateTime? @map("activated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  plan        Plan     @relation(fields: [planId], references: [id])
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
+  userId      String?  @db.Uuid @map("user_id")
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("license_keys")
+}
+
 
 model User {
   id           String   @id @default(uuid()) @db.Uuid
@@ -87,6 +140,7 @@ model User {
   leads        Lead[]
   payments     Payment[]
   agent        Agent?
+  licenseKeys  LicenseKey[]
 
   @@index([tenantId])
   @@index([phone])
@@ -486,6 +540,7 @@ model Module {
   
   // Relations
   tenantModules TenantModule[]
+  plans         Plan[]
 
   @@map("modules")
 }

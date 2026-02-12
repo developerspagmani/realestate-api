@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { prisma } = require('../config/database');
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, checkModule } = require('../middleware/auth');
 
 // Public route for Property 3D configuration (for widgets)
 router.get('/public/:propertyId', async (req, res) => {
@@ -36,7 +36,7 @@ router.get('/:propertyId', auth, async (req, res) => {
 });
 
 // Create/Update 3D config (Admin only)
-router.post('/:propertyId', auth, authorize(2, 3), async (req, res) => {
+router.post('/:propertyId', auth, authorize(2, 3), checkModule('3d_viewer'), async (req, res) => {
     try {
         const { propertyId } = req.params;
         const { config, layout, tourData, status } = req.body;

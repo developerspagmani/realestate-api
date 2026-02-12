@@ -19,14 +19,16 @@ async function generateSampleData() {
     await prisma.auditLog.deleteMany();
     await prisma.media.deleteMany();
     await prisma.userPropertyAccess.deleteMany();
+    await prisma.licenseKey.deleteMany();
     await prisma.tenantModule.deleteMany();
     await prisma.widget.deleteMany();
     await prisma.module.deleteMany();
+    await prisma.plan.deleteMany();
     await prisma.lead.deleteMany();
     await prisma.listing.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.unitAmenity.deleteMany();
-    await prisma.coworkingUnitDetails.deleteMany();
+    // await prisma.coworkingUnitDetails.deleteMany(); // Non-existent in current schema
     await prisma.realEstateUnitDetails.deleteMany();
     await prisma.unitPricing.deleteMany();
     await prisma.unit.deleteMany();
@@ -68,14 +70,53 @@ async function generateSampleData() {
       prisma.module.create({ data: { name: 'Discovery Portal', slug: 'discovery', status: 1 } })
     ]);
 
-    // Assign modules to both tenants
-    for (const tenant of [tenantRE, tenantCW]) {
-      for (const mod of modules) {
-        await prisma.tenantModule.create({
-          data: { tenantId: tenant.id, moduleId: mod.id, isActive: true }
-        });
+    // 3.1 Create Plans and link modules
+    const freePlan = await prisma.plan.create({
+      data: {
+        name: 'Free Starter',
+        slug: 'free-starter',
+        description: 'Basic features for small agencies',
+        price: 0,
+        interval: 'monthly',
+        modules: { connect: [{ id: modules[0].id }, { id: modules[4].id }] }
       }
+    });
+
+    const proPlan = await prisma.plan.create({
+      data: {
+        name: 'Professional',
+        slug: 'pro-realestate',
+        description: 'All features for growing businesses',
+        price: 49,
+        interval: 'monthly',
+        modules: { connect: modules.map(m => ({ id: m.id })) }
+      }
+    });
+
+    console.log('💎 Plans created: Free and Pro');
+
+    // 3.2 Create License Keys
+    await prisma.licenseKey.createMany({
+      data: [
+        { key: 'KEY-FREE-1111-2222', planId: freePlan.id, status: 1 },
+        { key: 'KEY-PRO-9999-8888', planId: proPlan.id, status: 1 }
+      ]
+    });
+
+    // Assign modules to both tenants (Elite RE gets Pro, Innovation CW gets Free)
+    for (const mod of modules) {
+      await prisma.tenantModule.create({
+        data: { tenantId: tenantRE.id, moduleId: mod.id, isActive: true }
+      });
     }
+
+    // Innovation gets only 2 modules
+    await prisma.tenantModule.createMany({
+      data: [
+        { tenantId: tenantCW.id, moduleId: modules[0].id, isActive: true },
+        { tenantId: tenantCW.id, moduleId: modules[4].id, isActive: true }
+      ]
+    });
 
     // 4. Create Users
     const hashedPassword = await bcrypt.hash('password123', 12);
@@ -358,14 +399,7 @@ async function generateSampleData() {
       });
       cwUnits.push(unit);
 
-      // Coworking Details
-      await prisma.coworkingUnitDetails.create({
-        data: {
-          unitId: unit.id,
-          seatType: 1, // desk
-          pricingBasis: 2 // per unit
-        }
-      });
+      // Coworking Details - Skipping as model not in schema
 
       // Pricing
       await prisma.unitPricing.create({

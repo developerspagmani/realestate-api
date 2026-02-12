@@ -45,6 +45,8 @@ router.get('/:id', async (req, res) => {
     const tenant = await prisma.tenant.findUnique({
       where: { id: req.params.id },
       include: {
+        plan: true,
+        licenseKey: true,
         _count: {
           select: {
             users: true,
@@ -109,9 +111,19 @@ router.post('/', authorize('ADMIN'), async (req, res) => {
 });
 
 // Update tenant — SEC-03 fix: Admin only + explicit field extraction
-router.put('/:id', authorize('ADMIN'), async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const { name, type, plan, settings, status } = req.body;
+    // Non-admin users can only update their own tenant
+    if (req.user.role !== 2 && req.user.tenantId !== req.params.id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Only OWNERS (3) or ADMINS (2) can update
+    if (req.user.role !== 2 && req.user.role !== 3) {
+      return res.status(403).json({ success: false, message: 'Insufficient permissions' });
+    }
+
+    const { name, type, plan, settings, status, address, city, state, country, postalCode } = req.body;
 
     const tenant = await prisma.tenant.update({
       where: { id: req.params.id },
@@ -121,6 +133,11 @@ router.put('/:id', authorize('ADMIN'), async (req, res) => {
         ...(plan && { plan }),
         ...(settings && { settings }),
         ...(status !== undefined && { status }),
+        ...(address && { address }),
+        ...(city && { city }),
+        ...(state && { state }),
+        ...(country && { country }),
+        ...(postalCode && { postalCode }),
       },
     });
     res.json({ success: true, data: tenant });

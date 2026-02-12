@@ -169,7 +169,19 @@ const getUsers = async (req, res) => {
           role: true,
           status: true,
           tenantId: true,
-          tenant: true,
+          tenant: {
+            select: {
+              id: true,
+              name: true,
+              domain: true,
+              type: true,
+              status: true,
+              planId: true,
+              subscriptionStatus: true,
+              subscriptionExpiresAt: true,
+              plan: true
+            }
+          },
           createdAt: true,
           updatedAt: true,
           _count: {

@@ -3,36 +3,47 @@ const { calculateCommission } = require('./commissionController');
 const { sendBookingEmail } = require('../utils/emailService');
 
 const calculateTotalPrice = (startAt, endAt, unit) => {
+  // Real estate visits are free by default
   if (!unit || !unit.unitPricing || unit.unitPricing.length === 0) {
-    throw new Error('Unit pricing not configured');
+    return 0;
   }
 
-  let totalPrice = 0;
-  const start = new Date(startAt);
-  const end = new Date(endAt);
-  const hours = Math.ceil((end - start) / (1000 * 60 * 60));
+  try {
+    let totalPrice = 0;
+    const start = new Date(startAt);
+    const end = new Date(endAt);
 
-  // Ensure we have at least 1 unit of time
-  const days = Math.max(1, Math.ceil(hours / 24));
-  const months = Math.max(1, Math.ceil(days / 30));
+    // Safety check for invalid dates
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
 
-  const pricing = unit.unitPricing[0];
-  switch (pricing.pricingModel) {
-    case 2: // hourly
-      totalPrice = parseFloat(pricing.price) * Math.max(1, hours);
-      break;
-    case 3: // daily
-      totalPrice = parseFloat(pricing.price) * days;
-      break;
-    case 4: // monthly
-      totalPrice = parseFloat(pricing.price) * months;
-      break;
-    case 1: // fixed
-    default:
-      totalPrice = parseFloat(pricing.price);
-      break;
+    const hours = Math.ceil((end - start) / (1000 * 60 * 60));
+    if (hours <= 0) return 0;
+
+    // Ensure we have at least 1 unit of time
+    const days = Math.max(1, Math.ceil(hours / 24));
+    const months = Math.max(1, Math.ceil(days / 30));
+
+    const pricing = unit.unitPricing[0];
+    switch (pricing.pricingModel) {
+      case 2: // hourly
+        totalPrice = parseFloat(pricing.price) * Math.max(1, hours);
+        break;
+      case 3: // daily
+        totalPrice = parseFloat(pricing.price) * days;
+        break;
+      case 4: // monthly
+        totalPrice = parseFloat(pricing.price) * months;
+        break;
+      case 1: // fixed
+      default:
+        totalPrice = parseFloat(pricing.price);
+        break;
+    }
+    return totalPrice;
+  } catch (err) {
+    console.error('Error calculating total price:', err);
+    return 0;
   }
-  return totalPrice;
 };
 
 // Create booking with ACID transaction

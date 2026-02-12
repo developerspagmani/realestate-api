@@ -17,13 +17,13 @@ const auth = async (req, res, next) => {
     // Get user from database
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        tenantId: true
+      include: {
+        tenant: {
+          select: {
+            subscriptionExpiresAt: true,
+            subscriptionStatus: true
+          }
+        }
       }
     });
 
@@ -115,7 +115,19 @@ const checkModule = (moduleSlug) => {
     }
 
     try {
-      // Find if module is assigned and active for this tenant
+      // 1. Check if subscription has expired
+      if (req.user.tenant?.subscriptionExpiresAt) {
+        const expiryDate = new Date(req.user.tenant.subscriptionExpiresAt);
+        if (new Date() > expiryDate) {
+          return res.status(403).json({
+            success: false,
+            code: 'SUBSCRIPTION_EXPIRED',
+            message: 'Your trial or subscription has expired. Please upgrade to continue accessing this feature.'
+          });
+        }
+      }
+
+      // 2. Find if module is assigned and active for this tenant
       const assignment = await prisma.tenantModule.findFirst({
         where: {
           tenantId: req.user.tenantId,

@@ -1,5 +1,5 @@
 const express = require('express');
-const { auth, authorize } = require('../middleware/auth');
+const { auth, authorize, checkModule } = require('../middleware/auth');
 const {
     getAllAudienceGroups,
     getAudienceGroupById,
@@ -40,6 +40,7 @@ const router = express.Router();
 // All routes are protected and require admin/owner access
 router.use(auth);
 router.use(authorize(2, 3));
+router.use(checkModule('marketing_hub'));
 
 // Audience Routes
 router.get('/audience', getAllAudienceGroups);

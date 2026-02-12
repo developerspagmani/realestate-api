@@ -37,7 +37,6 @@ class WorkflowService {
 
     /**
      * Process active enrollments (Main Engine)
-     * This could be called by a cron job or manually for testing
      */
     static async processWorkflows() {
         const activeEnrollments = await prisma.workflowEnrollment.findMany({
@@ -56,12 +55,46 @@ class WorkflowService {
         }
     }
 
+    static findStep(steps, id) {
+        if (!steps || !Array.isArray(steps)) return null;
+        for (const step of steps) {
+            if (step.id === id) return step;
+            if (step.yesSteps) {
+                const found = this.findStep(step.yesSteps, id);
+                if (found) return found;
+            }
+            if (step.noSteps) {
+                const found = this.findStep(step.noSteps, id);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    static findNextStepId(steps, currentId) {
+        if (!steps || !Array.isArray(steps)) return undefined;
+        for (let i = 0; i < steps.length; i++) {
+            if (steps[i].id === currentId) {
+                return steps[i + 1]?.id || null;
+            }
+            if (steps[i].yesSteps) {
+                const found = this.findNextStepId(steps[i].yesSteps, currentId);
+                if (found !== undefined) return found;
+            }
+            if (steps[i].noSteps) {
+                const found = this.findNextStepId(steps[i].noSteps, currentId);
+                if (found !== undefined) return found;
+            }
+        }
+        return undefined;
+    }
+
     static async processStep(enrollment) {
         const steps = typeof enrollment.workflow.steps === 'string'
             ? JSON.parse(enrollment.workflow.steps)
             : enrollment.workflow.steps;
 
-        const currentStep = steps.find(s => s.id === enrollment.currentStep);
+        const currentStep = this.findStep(steps, enrollment.currentStep);
         if (!currentStep) {
             await prisma.workflowEnrollment.update({
                 where: { id: enrollment.id },
@@ -72,13 +105,14 @@ class WorkflowService {
 
         // Execute action based on step type
         let actionResult = { success: true };
-        let nextStepId = currentStep.nextStepId;
+        let nextStepId = this.findNextStepId(steps, currentStep.id);
+        if (nextStepId === undefined) nextStepId = null;
+
         let delaySeconds = 0;
 
         try {
             switch (currentStep.type) {
                 case 'EMAIL':
-                    // Logic to send email template
                     if (currentStep.templateId) {
                         const template = await prisma.emailTemplate.findUnique({
                             where: { id: currentStep.templateId }
@@ -88,7 +122,6 @@ class WorkflowService {
                             const { sendTemplateEmail } = require('../../utils/emailService');
                             const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
 
-                            // 1. Personalization
                             let customizedContent = template.content;
                             let subject = template.subject || 'Special Update';
 
@@ -99,14 +132,13 @@ class WorkflowService {
                                 customizedContent = customizedContent.replace(/{{name}}/gi, 'Valued Client');
                             }
 
-                            // 2. Click Tracking (Wrap Links)
+                            // Tracking links
                             customizedContent = customizedContent.replace(/href="([^"]*)"/gi, (match, url) => {
                                 if (url.startsWith('mailto:') || url.startsWith('#') || !url.startsWith('http')) return match;
                                 const trackerUrl = `${baseUrl}/api/public/track/click?w=${enrollment.workflowId}&l=${enrollment.leadId}&u=${encodeURIComponent(url)}`;
                                 return `href="${trackerUrl}"`;
                             });
 
-                            // 3. Open Tracking (Inject Pixel)
                             const pixelUrl = `${baseUrl}/api/public/track/open?w=${enrollment.workflowId}&l=${enrollment.leadId}`;
                             customizedContent += `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`;
 
@@ -115,11 +147,35 @@ class WorkflowService {
                     }
                     console.log(`Sending tracked email ${currentStep.templateId} to ${enrollment.lead.email}`);
                     break;
+
                 case 'DELAY':
-                    delaySeconds = currentStep.delaySeconds || 3600;
+                    const duration = currentStep.duration || 1;
+                    const unit = currentStep.unit || 'hours';
+                    const multiplier = { 'minutes': 60, 'hours': 3600, 'days': 86400 };
+                    delaySeconds = duration * (multiplier[unit] || 3600);
                     break;
+
+                case 'CONDITION':
+                    const { field, operator, value: targetValue } = currentStep;
+                    const leadValue = enrollment.lead[field];
+                    let conditionMet = false;
+
+                    const valStr = String(leadValue || '').toLowerCase();
+                    const targetStr = String(targetValue || '').toLowerCase();
+
+                    switch (operator) {
+                        case 'equals': conditionMet = valStr === targetStr; break;
+                        case 'greater_than': conditionMet = Number(leadValue) > Number(targetValue); break;
+                        case 'contains': conditionMet = valStr.includes(targetStr); break;
+                        case 'not_empty': conditionMet = !!leadValue; break;
+                    }
+
+                    const branch = conditionMet ? currentStep.yesSteps : currentStep.noSteps;
+                    nextStepId = branch && branch.length > 0 ? branch[0].id : nextStepId;
+                    // Note: if branch is empty, it continues with the sibling nextStepId (if any)
+                    break;
+
                 case 'TAG':
-                    // Add/Remove lead tag
                     if (currentStep.tag) {
                         const currentTags = enrollment.lead.tags ? enrollment.lead.tags.split(',') : [];
                         let newTags = [...currentTags];
@@ -136,24 +192,20 @@ class WorkflowService {
                         });
                     }
                     break;
-                case 'ASSIGN':
-                    // Re-assign lead to specific agent or auto-assign
-                    if (currentStep.agentId) {
-                        let targetAgentId = currentStep.agentId;
 
-                        if (targetAgentId === 'auto') {
+                case 'ASSIGN':
+                    if (currentStep.agentId) {
+                        if (currentStep.agentId === 'auto') {
                             const { assignLeadRoundRobin } = require('../../controllers/agentController');
                             await assignLeadRoundRobin(enrollment.workflow.tenantId, enrollment.leadId);
                         } else {
-                            // Deactivate existing
                             await prisma.agentLead.updateMany({
                                 where: { leadId: enrollment.leadId, status: 1 },
                                 data: { status: 2 }
                             });
-                            // Assign new
                             await prisma.agentLead.create({
                                 data: {
-                                    agentId: targetAgentId,
+                                    agentId: currentStep.agentId,
                                     leadId: enrollment.leadId,
                                     isPrimary: true,
                                     status: 1
@@ -164,7 +216,7 @@ class WorkflowService {
                     break;
             }
 
-            // Log the action
+            // Log action
             await prisma.workflowLog.create({
                 data: {
                     enrollmentId: enrollment.id,
@@ -179,7 +231,7 @@ class WorkflowService {
             await prisma.workflowEnrollment.update({
                 where: { id: enrollment.id },
                 data: {
-                    currentStep: nextStepId || null,
+                    currentStep: nextStepId,
                     status: nextStepId ? 1 : 2,
                     nextActionAt: nextStepId ? new Date(Date.now() + (delaySeconds * 1000)) : null
                 }

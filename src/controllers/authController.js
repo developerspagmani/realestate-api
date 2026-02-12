@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
+const { SubscriptionStatus } = require('../constants');
 const { sendActivationEmail, sendResetPasswordEmail, sendAccountConfirmationEmail } = require('../utils/emailService');
 
 // Generate JWT token (includes role for frontend middleware authorization)
@@ -56,7 +57,8 @@ const register = async (req, res) => {
     const {
       email, password, firstName, lastName, phone,
       companyName, spaceName, type, // Tenant fields
-      website, addressLine1, addressLine2, city, state, country, zipCode
+      website, addressLine1, addressLine2, city, state, country, zipCode,
+      planId, licenseKey // New fields
     } = req.body;
 
     // Check if user already exists
@@ -77,14 +79,39 @@ const register = async (req, res) => {
     const tenantType = type || 1; // Default to 1 (Real Estate) if not specified
 
     // Transaction to create Tenant and User
-    const result = await prisma.$transaction(async (prisma) => {
+    const result = await prisma.$transaction(async (tx) => {
       let tenant = null;
 
       if (isOwnerRegistration) {
-        // Generate basic domain slug (optional log, can be refined)
+        let actualPlanId = planId;
+
+        // Validation for License Key if provided
+        if (licenseKey) {
+          const keyRecord = await tx.licenseKey.findUnique({
+            where: { key: licenseKey }
+          });
+
+          if (!keyRecord || keyRecord.status !== 1) {
+            throw new Error('License key is invalid or has already been used');
+          }
+
+          if (planId && keyRecord.planId !== planId) {
+            throw new Error('License key is not valid for the selected plan');
+          }
+
+          actualPlanId = keyRecord.planId;
+        }
+
+        // Generate basic domain slug
         const domainSlug = tenantName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
 
-        tenant = await prisma.tenant.create({
+        // Fetch default trial period from settings
+        const trialSetting = await tx.systemSetting.findUnique({
+          where: { key: 'default_trial_days' }
+        });
+        const trialDays = trialSetting ? parseInt(trialSetting.value) : 15;
+
+        tenant = await tx.tenant.create({
           data: {
             name: tenantName,
             type: tenantType,
@@ -95,10 +122,63 @@ const register = async (req, res) => {
             state,
             country,
             postalCode: zipCode,
-            status: 1
+            status: 1,
+            planId: actualPlanId || undefined,
+            subscriptionStatus: licenseKey ? SubscriptionStatus.ACTIVE : SubscriptionStatus.TRIAL,
+            subscriptionExpiresAt: licenseKey
+              ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+              : new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000)
           }
         });
+
+        // Mark License Key as used if provided
+        if (licenseKey) {
+          const keyRecord = await tx.licenseKey.update({
+            where: { key: licenseKey },
+            data: {
+              status: 2, // Used
+              tenantId: tenant.id,
+              activatedAt: new Date(),
+              userId: null // We'll link this after user is created
+            },
+            include: {
+              plan: {
+                include: {
+                  modules: true
+                }
+              }
+            }
+          });
+
+          // Assign modules from plan to tenant
+          if (keyRecord.plan && keyRecord.plan.modules) {
+            const moduleAssignments = keyRecord.plan.modules.map(mod => ({
+              tenantId: tenant.id,
+              moduleId: mod.id,
+              isActive: true
+            }));
+
+            if (moduleAssignments.length > 0) {
+              await tx.tenantModule.createMany({
+                data: moduleAssignments
+              });
+            }
+          }
+        } else {
+          // New owner registration without key -> Assign all active modules for trial
+          const allModules = await tx.module.findMany({ where: { status: 1 } });
+          if (allModules.length > 0) {
+            await tx.tenantModule.createMany({
+              data: allModules.map(mod => ({
+                tenantId: tenant.id,
+                moduleId: mod.id,
+                isActive: true
+              }))
+            });
+          }
+        }
       }
+
 
       // Hash password
       const salt = await bcrypt.genSalt(12);
@@ -108,7 +188,7 @@ const register = async (req, res) => {
       const activationToken = crypto.randomBytes(32).toString('hex');
 
       // Create user
-      const user = await prisma.user.create({
+      const user = await tx.user.create({
         data: {
           email,
           passwordHash: hashedPassword,
@@ -116,18 +196,10 @@ const register = async (req, res) => {
           lastName,
           name: `${firstName} ${lastName}`,
           phone,
-          companyName,
-          website,
-          addressLine1,
-          addressLine2,
-          city,
-          state,
-          country,
-          zipCode,
           role: isOwnerRegistration ? 3 : 1, // 3: Owner, 1: User
-          tenantId: tenant ? tenant.id : undefined,
-          status: 2, // 2: Inactive / Pending Verification
+          tenantId: tenant ? tenant.id : null,
           activationToken,
+          status: 2, // Inactive
           isVerified: false
         },
         select: {
@@ -136,9 +208,19 @@ const register = async (req, res) => {
           firstName: true,
           lastName: true,
           name: true,
-          activationToken: true
+          activationToken: true,
+          tenantId: true
         }
       });
+
+      // Link License Key to User if provided
+      if (licenseKey) {
+        await tx.licenseKey.update({
+          where: { key: licenseKey },
+          data: { userId: user.id }
+        });
+      }
+
 
       return { user, tenant };
     });
@@ -239,6 +321,9 @@ const login = async (req, res) => {
           email ? { email } : null,
           phone ? { phone } : null
         ].filter(Boolean)
+      },
+      include: {
+        tenant: true
       }
     });
 
@@ -322,6 +407,8 @@ const login = async (req, res) => {
           phone: user.phone,
           role: user.role,
           tenantId: user.tenantId,
+          subscriptionStatus: user.tenant?.subscriptionStatus || (user.role === 3 ? 3 : 1),
+          subscriptionExpiresAt: user.tenant?.subscriptionExpiresAt || null
         },
         token,
       }
@@ -340,22 +427,26 @@ const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        role: true,
-        tenantId: true,
-        // avatar: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        tenant: {
+          select: {
+            subscriptionStatus: true,
+            subscriptionExpiresAt: true
+          }
+        }
       }
     });
 
+    const userData = {
+      ...user,
+      subscriptionStatus: user.tenant?.subscriptionStatus || (user.role === 3 ? 3 : 1),
+      subscriptionExpiresAt: user.tenant?.subscriptionExpiresAt || null
+    };
+    delete userData.tenant;
+
     res.status(200).json({
       success: true,
-      data: { user }
+      data: { user: userData }
     });
   } catch (error) {
     console.error('Get me error:', error);
