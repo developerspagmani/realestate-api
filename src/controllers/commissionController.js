@@ -74,6 +74,7 @@ const calculateCommission = async (bookingId) => {
             // Create Commission Record
             await prisma.commission.create({
                 data: {
+                    tenantId: booking.tenantId,
                     agentId: agent.id,
                     bookingId: booking.id,
                     amount: commissionAmount,
@@ -102,14 +103,32 @@ const calculateCommission = async (bookingId) => {
 const getAgentCommissions = async (req, res) => {
     try {
         const { agentId } = req.params;
-        const tenantId = req.user?.tenantId;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
-        // Verify access
-        // Admin/Owner can see any. Agent can see own.
-        // TODO: Access control checks.
+        if (!tenantId) {
+            return res.status(400).json({ success: false, message: 'Tenant context required' });
+        }
+
+        // Verify the agent belongs to the tenant
+        const agent = await prisma.agent.findUnique({
+            where: { id: agentId }
+        });
+
+        if (!agent || agent.tenantId !== tenantId) {
+            return res.status(403).json({ success: false, message: 'Access denied. Agent not found in this tenant.' });
+        }
+
+        // Agents can only see their own commissions
+        if (req.user.role === 4 && req.user.id !== agent.userId) {
+            return res.status(403).json({ success: false, message: 'Access denied. Cannot view other agents commissions.' });
+        }
 
         const commissions = await prisma.commission.findMany({
-            where: { agentId },
+            where: {
+                agentId,
+                tenantId
+            },
             include: {
                 booking: {
                     select: {

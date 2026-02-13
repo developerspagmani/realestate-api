@@ -4,9 +4,12 @@ const { v4: uuidv4 } = require('uuid');
 // Process payment with ACID transaction
 const processPayment = async (req, res) => {
   try {
-    const { bookingId, paymentMethod, amount } = req.body;
+    const { bookingId, paymentMethod, amount, tenantId: bodyTenantId } = req.body;
     const userId = req.user.id;
-    const tenantId = req.tenant?.id;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && bodyTenantId) ? bodyTenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -60,6 +63,7 @@ const processPayment = async (req, res) => {
       // Create payment record
       const payment = await tx.payment.create({
         data: {
+          tenantId,
           bookingId,
           userId,
           amount,
@@ -156,12 +160,19 @@ const getPaymentById = async (req, res) => {
       });
     }
 
-    // SEC-08 fix: Use numeric role comparison instead of string
-    if (payment.userId !== req.user.id && req.user.role !== 2 && req.user.role !== 3) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
+    // SEC-01 fix: Strict tenant isolation check
+    const isOwner = req.user.role === 3;
+    const isTenantAdmin = payment.tenantId === req.user.tenantId;
+
+    if (req.user.role !== 2) {
+      if (payment.tenantId !== (req.tenant?.id || req.user?.tenantId)) {
+        return res.status(403).json({ success: false, message: 'Access denied. Cross-tenant access prohibited.' });
+      }
+
+      // Ownership check for non-system-admins
+      if (payment.userId !== req.user.id && !isOwner) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
     }
 
     res.status(200).json({
@@ -193,6 +204,7 @@ const getUserPayments = async (req, res) => {
     // Build where clause
     const where = {
       userId: req.user.id,
+      tenantId: req.tenant?.id || req.user?.tenantId,
       ...(status && { status: status.toUpperCase() }),
     };
 
@@ -270,45 +282,48 @@ const getAllPayments = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const effectiveTenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
 
     // Build where clause
     const where = {};
     const bookingWhere = {};
 
-    const effectiveTenantId = queryTenantId || req.tenant?.id || (req.user && !isAdmin ? req.user.tenantId : null);
     if (effectiveTenantId) {
-      bookingWhere.tenantId = effectiveTenantId;
+      where.tenantId = effectiveTenantId;
     }
 
     if (industryType) {
-      bookingWhere.tenant = { type: parseInt(industryType) };
+      where.booking = { tenant: { type: parseInt(industryType) } };
     }
 
     // Role-based filtering
     if (req.user.role === 3) { // OWNER
       // Owners can only see payments for their properties
-      bookingWhere.unit = {
-        property: {
-          userPropertyAccess: {
-            some: { userId: req.user.id }
+      where.booking = {
+        ...where.booking,
+        unit: {
+          property: {
+            userPropertyAccess: {
+              some: { userId: req.user.id }
+            }
           }
         }
       };
     } else if (isAdmin) {
       // Admin can filter by ownerId
       if (queryOwnerId) {
-        bookingWhere.unit = {
-          property: {
-            userPropertyAccess: {
-              some: { userId: queryOwnerId }
+        where.booking = {
+          ...where.booking,
+          unit: {
+            property: {
+              userPropertyAccess: {
+                some: { userId: queryOwnerId }
+              }
             }
           }
         };
       }
-    }
-
-    if (Object.keys(bookingWhere).length > 0) {
-      where.booking = bookingWhere;
     }
 
     if (status) where.status = status.toUpperCase();
@@ -466,7 +481,18 @@ const processRefund = async (req, res) => {
 // Get payment statistics (Admin/Owner only)
 const getPaymentStats = async (req, res) => {
   try {
-    const { period = 'month' } = req.query;
+    const { period = 'month', tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
+
+    if (!tenantId && !isAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tenant ID or Admin privileges required'
+      });
+    }
 
     let dateFilter;
     const now = new Date();
@@ -494,6 +520,14 @@ const getPaymentStats = async (req, res) => {
         break;
     }
 
+    const where = {
+      createdAt: dateFilter
+    };
+
+    if (tenantId) {
+      where.tenantId = tenantId;
+    }
+
     const [
       paymentStats,
       totalRevenue,
@@ -503,15 +537,15 @@ const getPaymentStats = async (req, res) => {
       // Payment statistics by status
       prisma.payment.groupBy({
         by: ['status'],
-        where: { createdAt: dateFilter },
+        where,
         _count: { id: true },
         _sum: { amount: true }
       }),
       // Total revenue
       prisma.payment.aggregate({
         where: {
-          status: 'COMPLETED',
-          createdAt: dateFilter
+          ...where,
+          status: 'COMPLETED'
         },
         _sum: { amount: true },
         _count: { id: true }
@@ -519,8 +553,8 @@ const getPaymentStats = async (req, res) => {
       // Refund statistics
       prisma.payment.aggregate({
         where: {
-          status: 'REFUNDED',
-          createdAt: dateFilter
+          ...where,
+          status: 'REFUNDED'
         },
         _sum: { amount: true },
         _count: { id: true }
@@ -529,8 +563,8 @@ const getPaymentStats = async (req, res) => {
       prisma.payment.groupBy({
         by: ['paymentMethod'],
         where: {
-          status: 'COMPLETED',
-          createdAt: dateFilter
+          ...where,
+          status: 'COMPLETED'
         },
         _count: { id: true },
         _sum: { amount: true }

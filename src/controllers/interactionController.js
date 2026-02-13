@@ -43,6 +43,7 @@ const trackInteraction = async (req, res) => {
         const result = await prisma.$transaction(async (tx) => {
             const interaction = await tx.leadInteraction.create({
                 data: {
+                    tenantId: lead.tenantId,
                     leadId: lead.id,
                     type,
                     metadata: metadata || {},
@@ -79,14 +80,25 @@ const trackInteraction = async (req, res) => {
 const getLeadInteractions = async (req, res) => {
     try {
         const { id } = req.params;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
+
+        if (!tenantId) {
+            return res.status(400).json({ success: false, message: 'Tenant context required' });
+        }
+
         const interactions = await prisma.leadInteraction.findMany({
-            where: { leadId: id },
+            where: {
+                leadId: id,
+                tenantId
+            },
             orderBy: { occurredAt: 'desc' },
             take: 50
         });
 
         res.status(200).json({ success: true, data: interactions });
     } catch (error) {
+        console.error('Get interactions error:', error);
         res.status(500).json({ success: false, message: 'Error fetching interactions' });
     }
 };

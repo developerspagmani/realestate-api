@@ -3,7 +3,7 @@ const { prisma } = require('../config/database');
 // Get all forms
 const getAllForms = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
         }
@@ -23,7 +23,7 @@ const getAllForms = async (req, res) => {
 // Create form
 const createForm = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, configuration, targetGroupId, status } = req.body;
 
         if (!tenantId) {
@@ -33,9 +33,9 @@ const createForm = async (req, res) => {
         const form = await prisma.formBuilder.create({
             data: {
                 name,
-                configuration: configuration || {},
-                targetGroupId,
-                status: status || 1,
+                configuration: typeof configuration === 'string' ? JSON.parse(configuration) : (configuration || {}),
+                targetGroupId: (targetGroupId && targetGroupId !== '') ? targetGroupId : null,
+                status: status ? parseInt(status) : 1,
                 tenantId
             }
         });
@@ -51,7 +51,7 @@ const createForm = async (req, res) => {
 const deleteForm = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         await prisma.formBuilder.deleteMany({
             where: { id, tenantId }
@@ -68,15 +68,15 @@ const deleteForm = async (req, res) => {
 const updateForm = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, configuration, targetGroupId, status } = req.body;
 
         const form = await prisma.formBuilder.updateMany({
             where: { id, tenantId },
             data: {
                 ...(name && { name }),
-                ...(configuration && { configuration }),
-                ...(targetGroupId !== undefined && { targetGroupId }),
+                ...(configuration && { configuration: typeof configuration === 'string' ? JSON.parse(configuration) : configuration }),
+                targetGroupId: (targetGroupId !== undefined && targetGroupId !== '') ? targetGroupId : (targetGroupId === '' ? null : undefined),
                 ...(status !== undefined && { status: parseInt(status) })
             }
         });

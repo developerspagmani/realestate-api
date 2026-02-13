@@ -89,6 +89,9 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+const sanitizeBody = require('./middleware/sanitize');
+app.use(sanitizeBody);
+
 // Health check with database info
 app.get('/health', (req, res) => {
   const dbInfo = getDatabaseInfo();

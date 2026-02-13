@@ -3,7 +3,7 @@ const { prisma } = require('../config/database');
 // Get all workflows
 const getAllWorkflows = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
         }
@@ -23,7 +23,7 @@ const getAllWorkflows = async (req, res) => {
 // Create workflow
 const createWorkflow = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, description, trigger, steps, status } = req.body;
 
         if (!tenantId) {
@@ -34,9 +34,9 @@ const createWorkflow = async (req, res) => {
             data: {
                 name,
                 description,
-                trigger: trigger || {},
-                steps: steps || {},
-                status: status || 1,
+                trigger: typeof trigger === 'string' ? JSON.parse(trigger) : (trigger || {}),
+                steps: typeof steps === 'string' ? JSON.parse(steps) : (steps || {}),
+                status: status ? parseInt(status) : 1,
                 tenantId
             }
         });
@@ -52,7 +52,7 @@ const createWorkflow = async (req, res) => {
 const toggleWorkflow = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const workflow = await prisma.marketingWorkflow.findFirst({
             where: { id, tenantId }
@@ -78,7 +78,7 @@ const toggleWorkflow = async (req, res) => {
 const updateWorkflow = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, description, trigger, steps, status } = req.body;
 
         const workflow = await prisma.marketingWorkflow.updateMany({
@@ -86,8 +86,8 @@ const updateWorkflow = async (req, res) => {
             data: {
                 ...(name && { name }),
                 ...(description !== undefined && { description }),
-                ...(trigger && { trigger }),
-                ...(steps && { steps }),
+                ...(trigger && { trigger: typeof trigger === 'string' ? JSON.parse(trigger) : trigger }),
+                ...(steps && { steps: typeof steps === 'string' ? JSON.parse(steps) : steps }),
                 ...(status !== undefined && { status: parseInt(status) })
             }
         });
@@ -103,7 +103,7 @@ const updateWorkflow = async (req, res) => {
 const deleteWorkflow = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         await prisma.marketingWorkflow.deleteMany({
             where: { id, tenantId }

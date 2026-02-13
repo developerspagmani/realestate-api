@@ -61,9 +61,20 @@ const createBooking = async (req, res) => {
       userId: bodyUserId,
       agentId,
       customerInfo,
+      guestName,
+      guestEmail,
+      guestPhone,
       totalPrice: bodyTotalPrice,
       qrCode: bodyQrCode
     } = req.body;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && bodyTenantId) ? bodyTenantId : req.user.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ success: false, message: 'Tenant ID is required' });
+    }
 
     // If Admin/Owner, they can specify a different userId. Otherwise use req.user.id
     let userId = req.user.id;
@@ -121,13 +132,60 @@ const createBooking = async (req, res) => {
       // Generate QR Code reference if not provided
       const qrReference = bodyQrCode || 'BK-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
+      // Process Lead mapping if guest email is provided
+      let leadId = null;
+      if (guestEmail) {
+        // Try to find existing lead by email in this tenant
+        let lead = await tx.lead.findFirst({
+          where: { email: guestEmail, tenantId }
+        });
+
+        if (lead) {
+          // Update existing lead with latest contact info if provided
+          lead = await tx.lead.update({
+            where: { id: lead.id },
+            data: {
+              name: guestName || lead.name,
+              phone: guestPhone || lead.phone,
+              // If lead doesn't have a userId yet, check if a user exists with this email
+              userId: lead.userId || (await tx.user.findUnique({ where: { email: guestEmail }, select: { id: true } }))?.id || null,
+              status: lead.status === 5 ? 1 : lead.status
+            }
+          });
+        } else {
+          // Check if a user exists with this email to link them
+          const existingUser = await tx.user.findUnique({ where: { email: guestEmail }, select: { id: true } });
+
+          // Create new lead
+          lead = await tx.lead.create({
+            data: {
+              tenantId,
+              name: guestName || 'Guest',
+              email: guestEmail,
+              phone: guestPhone || null,
+              userId: existingUser?.id || null,
+              source: 1, // website
+              status: 1, // new
+              unitId: unitId,
+              propertyId: unit.propertyId,
+              notes: `Auto-generated from visit schedule for unit ${unit.unitCode}`
+            }
+          });
+        }
+        leadId = lead.id;
+      }
+
       // Create booking
       const booking = await tx.booking.create({
         data: {
-          tenantId: bodyTenantId || req.user.tenantId || null,
+          tenantId,
           unitId,
-          userId,
-          agentId: agentId || null,
+          userId: (bodyUserId && bodyUserId !== '') ? bodyUserId : (req.user.role === 1 ? req.user.id : null),
+          leadId: leadId,
+          agentId: (agentId && agentId !== '') ? agentId : null,
+          guestName: guestName || null,
+          guestEmail: guestEmail || null,
+          guestPhone: guestPhone || null,
           startAt: new Date(startAt),
           endAt: new Date(endAt),
           status: status !== undefined ? parseInt(status) : 1, // pending
@@ -225,20 +283,21 @@ const createBooking = async (req, res) => {
 const getBookingById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenantId } = req.query;
+    const { tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : req.user.tenantId;
 
     // Build where clause with tenant and role-based access
     const where = { id };
 
-    // Add tenant filtering
     if (tenantId) {
       where.tenantId = tenantId;
-    } else if (req.user && req.user.role !== 2 && req.user.tenantId) {
-      where.tenantId = req.user.tenantId;
-    } else if (!req.user && !tenantId) {
+    } else if (!isAdmin) {
       return res.status(400).json({
         success: false,
-        message: 'Tenant ID is required when authentication is disabled'
+        message: 'Tenant ID is required'
       });
     }
 
@@ -323,7 +382,11 @@ const updateBookingStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const { tenantId } = req.query;
+    const { tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const effectiveTenantId = (isAdmin && queryTenantId) ? queryTenantId : req.user.tenantId;
 
     // Validate status as integer
     const statusInt = parseInt(status);
@@ -339,13 +402,10 @@ const updateBookingStatus = async (req, res) => {
       // Build where clause with tenant filtering
       const where = { id };
 
-      // Add tenant filtering - use query parameter if auth is disabled
-      if (tenantId) {
-        where.tenantId = tenantId;
-      } else if (req.user && req.user.role !== 2 && req.user.tenantId) {
-        where.tenantId = req.user.tenantId;
-      } else if (!req.user && !tenantId) {
-        throw new Error('Tenant ID is required when authentication is disabled');
+      if (effectiveTenantId) {
+        where.tenantId = effectiveTenantId;
+      } else if (!isAdmin) {
+        throw new Error('Tenant ID is required');
       }
 
       const updatedBooking = await tx.booking.update({
@@ -437,21 +497,26 @@ const updateBooking = async (req, res) => {
       userId,
       unitId,
       agentId,
+      propertyId,
+      guestName,
+      guestEmail,
+      guestPhone,
       tenantId: queryTenantId
     } = req.body;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const effectiveTenantId = (isAdmin && queryTenantId) ? queryTenantId : req.user.tenantId;
 
     // Start transaction for ACID compliance
     const booking = await prisma.$transaction(async (tx) => {
       // Build where clause with tenant filtering
       const where = { id };
 
-      // Add tenant filtering - use query parameter if auth is disabled
-      if (queryTenantId) {
-        where.tenantId = queryTenantId;
-      } else if (req.user && req.user.role !== 2 && req.user.tenantId) {
-        where.tenantId = req.user.tenantId;
-      } else if (!req.user && !queryTenantId) {
-        throw new Error('Tenant ID is required when authentication is disabled');
+      if (effectiveTenantId) {
+        where.tenantId = effectiveTenantId;
+      } else if (!isAdmin) {
+        throw new Error('Tenant ID is required');
       }
 
       // Get existing booking first
@@ -507,9 +572,10 @@ const updateBooking = async (req, res) => {
         updateData.status = statusInt;
       }
       if (paymentStatus !== undefined) updateData.paymentStatus = parseInt(paymentStatus);
-      if (userId) updateData.userId = userId;
-      if (unitId) updateData.unitId = unitId;
-      if (agentId !== undefined) updateData.agentId = agentId;
+      if (userId) updateData.userId = userId === '' ? null : userId;
+      if (unitId) updateData.unitId = unitId === '' ? null : unitId;
+      if (propertyId) updateData.propertyId = propertyId === '' ? null : propertyId;
+      if (agentId !== undefined) updateData.agentId = agentId === '' ? null : agentId;
       if (notes !== undefined) updateData.notes = notes;
       if (specialRequests !== undefined) updateData.specialRequests = specialRequests;
 
@@ -530,6 +596,53 @@ const updateBooking = async (req, res) => {
 
         updateData.totalPrice = calculateTotalPrice(effectiveStart, effectiveEnd, pricingUnit);
       }
+
+      // Handle guest info and Lead mapping (Automated Sync)
+      const effectiveGuestEmail = guestEmail !== undefined ? guestEmail : existingBooking.guestEmail;
+
+      if (effectiveGuestEmail) {
+        // Always ensure we have a lead linked and it's updated with latest info
+        let lead = await tx.lead.findFirst({
+          where: { email: effectiveGuestEmail, tenantId: existingBooking.tenantId }
+        });
+
+        if (lead) {
+          // Update lead with latest provided info
+          lead = await tx.lead.update({
+            where: { id: lead.id },
+            data: {
+              name: guestName || lead.name,
+              phone: guestPhone || lead.phone,
+              userId: lead.userId || (await tx.user.findUnique({ where: { email: effectiveGuestEmail }, select: { id: true } }))?.id || null,
+              status: lead.status === 5 ? 1 : lead.status
+            }
+          });
+        } else {
+          // Check for user
+          const existingUser = await tx.user.findUnique({ where: { email: effectiveGuestEmail }, select: { id: true } });
+
+          // Create lead if it doesn't exist but we have an email
+          lead = await tx.lead.create({
+            data: {
+              tenantId: existingBooking.tenantId,
+              name: guestName || existingBooking.guestName || 'Guest',
+              email: effectiveGuestEmail,
+              phone: guestPhone || existingBooking.guestPhone || null,
+              userId: existingUser?.id || null,
+              source: 1,
+              status: 1,
+              unitId: unitId || existingBooking.unitId,
+              propertyId: propertyId || existingBooking.propertyId,
+              notes: `Auto-generated from updated visit schedule`
+            }
+          });
+        }
+        updateData.leadId = lead.id;
+      }
+
+      if (guestName !== undefined) updateData.guestName = guestName;
+      if (guestEmail !== undefined) updateData.guestEmail = guestEmail;
+      if (guestPhone !== undefined) updateData.guestPhone = guestPhone;
 
       // Update booking
       const updatedBooking = await tx.booking.update({
@@ -558,6 +671,15 @@ const updateBooking = async (req, res) => {
                   addressLine2: true,
                 }
               }
+            }
+          },
+          property: {
+            select: {
+              id: true,
+              title: true,
+              city: true,
+              addressLine1: true,
+              addressLine2: true,
             }
           },
           agent: {
@@ -612,19 +734,19 @@ const cancelBooking = async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
     const { tenantId } = req.query;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const effectiveTenantId = (isAdmin && tenantId) ? tenantId : req.user.tenantId;
 
     // Start transaction for ACID compliance
     const booking = await prisma.$transaction(async (tx) => {
       // Build where clause with tenant filtering
       const where = { id };
 
-      // Add tenant filtering - use query parameter if auth is disabled
-      if (tenantId) {
-        where.tenantId = tenantId;
-      } else if (req.user && req.user.role !== 2 && req.user.tenantId) {
-        where.tenantId = req.user.tenantId;
-      } else if (!req.user && !tenantId) {
-        throw new Error('Tenant ID is required when authentication is disabled');
+      if (effectiveTenantId) {
+        where.tenantId = effectiveTenantId;
+      } else if (!isAdmin) {
+        throw new Error('Tenant ID is required');
       }
 
       // Get booking first
@@ -766,22 +888,26 @@ const getAllBookings = async (req, res) => {
       sortOrder = 'desc',
       tenantId,
       ownerId,
-      industryType
+      industryType,
+      propertyId
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const effectiveTenantId = (isAdmin && tenantId) ? tenantId : (isAdmin ? null : req.user?.tenantId);
 
     // Build where clause with tenant filtering for multi-tenant architecture
     const where = {};
 
-    // Add tenant filtering
-    const effectiveTenantId = tenantId || (req.user && !isAdmin ? req.user.tenantId : null);
     if (effectiveTenantId) {
       where.tenantId = effectiveTenantId;
     }
     if (industryType) {
       where.tenant = { type: parseInt(industryType) };
+    }
+    if (propertyId) {
+      where.propertyId = propertyId;
     }
 
     // Owner filtering logic
@@ -794,13 +920,17 @@ const getAllBookings = async (req, res) => {
       });
 
       if (hasAccessRecords > 0) {
-        where.unit = {
-          property: {
-            userPropertyAccess: {
-              some: { userId: effectiveOwnerId }
-            }
-          }
-        };
+        // Find properties this user has access to
+        const accessRecords = await prisma.userPropertyAccess.findMany({
+          where: { userId: effectiveOwnerId },
+          select: { propertyId: true }
+        });
+        const propertyIds = accessRecords.map(r => r.propertyId);
+
+        where.OR = [
+          { propertyId: { in: propertyIds } },
+          { unit: { propertyId: { in: propertyIds } } }
+        ];
       }
       // If no access records, they are treated as global owners for that tenant
     }
@@ -827,6 +957,14 @@ const getAllBookings = async (req, res) => {
               phone: true,
             }
           },
+          lead: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            }
+          },
           unit: {
             select: {
               id: true,
@@ -843,6 +981,15 @@ const getAllBookings = async (req, res) => {
               }
             }
           },
+          property: {
+            select: {
+              id: true,
+              title: true,
+              city: true,
+              addressLine1: true,
+              addressLine2: true,
+            }
+          },
           agent: {
             select: {
               id: true,
@@ -851,7 +998,8 @@ const getAllBookings = async (req, res) => {
                   name: true,
                   firstName: true,
                   lastName: true,
-                  email: true
+                  email: true,
+                  phone: true
                 }
               }
             }
@@ -1068,6 +1216,28 @@ const getUserBookings = async (req, res) => {
               }
             }
           },
+          lead: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            }
+          },
+          agent: {
+            select: {
+              id: true,
+              user: {
+                select: {
+                  name: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  phone: true
+                }
+              }
+            }
+          },
           tenant: {
             select: {
               id: true,
@@ -1137,6 +1307,82 @@ const deleteBooking = async (req, res) => {
   }
 };
 
+const sendVisitInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    const effectiveTenantId = (isAdmin && queryTenantId) ? queryTenantId : req.user.tenantId;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: {
+        user: true,
+        lead: true,
+        unit: {
+          include: {
+            property: true
+          }
+        },
+        property: true,
+        agent: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Visit record not found' });
+    }
+
+    if (effectiveTenantId && booking.tenantId !== effectiveTenantId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const recipientEmail = booking.guestEmail || booking.user?.email || booking.lead?.email;
+    const recipientName = booking.guestName || booking.user?.name || booking.lead?.name || 'Guest';
+
+    console.log('Sending visit info to:', recipientEmail, 'for booking:', id);
+
+    if (!recipientEmail) {
+      console.warn('No recipient email found for booking:', id, {
+        guestEmail: booking.guestEmail,
+        userEmail: booking.user?.email,
+        leadEmail: booking.lead?.email
+      });
+      return res.status(400).json({ success: false, message: 'User or Guest email not found' });
+    }
+
+    // Send email using a specialized template
+    const propertyTitle = booking.unit?.property?.title || booking.property?.title || 'Unknown Property';
+    const unitCode = booking.unit?.unitCode || 'N/A';
+    const agentName = booking.agent?.user?.name || booking.agent?.user?.firstName || 'Assigned Representative';
+    const agentEmail = booking.agent?.user?.email || 'N/A';
+    const agentPhone = booking.agent?.user?.phone || 'N/A';
+
+    await sendBookingEmail(recipientEmail, recipientName, {
+      unitCode: unitCode,
+      propertyName: propertyTitle,
+      date: new Date(booking.startAt).toLocaleString(),
+      price: 'Free Visit',
+      status: 'Confirmed',
+      agentInfo: {
+        name: agentName,
+        email: agentEmail,
+        phone: agentPhone
+      }
+    });
+
+    res.status(200).json({ success: true, message: 'Visit info email sent successfully' });
+  } catch (error) {
+    console.error('Send visit info error:', error);
+    res.status(500).json({ success: false, message: 'Server error sending email' });
+  }
+};
+
 module.exports = {
   createBooking,
   getBookingById,
@@ -1147,5 +1393,6 @@ module.exports = {
   checkAvailability,
   getAllBookings,
   getBookingStats,
-  getUserBookings
+  getUserBookings,
+  sendVisitInfo
 };

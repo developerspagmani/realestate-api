@@ -234,7 +234,15 @@ const sendBookingEmail = async (email, name, bookingDetails) => {
                 <p style="margin: 5px 0;"><strong>Total Price:</strong> ${bookingDetails.price}</p>
                 <p style="margin: 5px 0;"><strong>Status:</strong> ${bookingDetails.status}</p>
             </div>
-            <p>Please log in to your dashboard for more details.</p>
+            ${bookingDetails.agentInfo ? `
+            <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px;">
+                <h4 style="color: #4f46e5; margin-bottom: 10px;">Your Assigned Representative</h4>
+                <p style="margin: 5px 0;"><strong>Name:</strong> ${bookingDetails.agentInfo.name}</p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> ${bookingDetails.agentInfo.email}</p>
+                ${bookingDetails.agentInfo.phone ? `<p style="margin: 5px 0;"><strong>Phone:</strong> ${bookingDetails.agentInfo.phone}</p>` : ''}
+            </div>
+            ` : ''}
+            <p style="margin-top: 30px;">Please log in to your dashboard for more details.</p>
         </div>
         `
         };

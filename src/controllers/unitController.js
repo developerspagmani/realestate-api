@@ -15,13 +15,39 @@ const createUnit = async (req, res) => {
             gallery
         } = req.body;
 
-        const tenantId = req.body.tenantId || req.user?.tenantId || req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+        const tenantId = (isAdmin && req.body.tenantId) ? req.body.tenantId : (req.tenant?.id || req.user?.tenantId);
 
         if (!tenantId || !propertyId || !unitCategory) {
             return res.status(400).json({
                 success: false,
                 message: 'Required fields: tenantId, propertyId, unitCategory'
             });
+        }
+
+        // Verify property belongs to the tenant and user has access if owner
+        const property = await prisma.property.findUnique({
+            where: { id: propertyId, tenantId }
+        });
+
+        if (!property) {
+            return res.status(404).json({ success: false, message: 'Property not found' });
+        }
+
+        if (req.user.role === 3) {
+            const hasAccess = await prisma.userPropertyAccess.findFirst({
+                where: { userId: req.user.id, propertyId }
+            });
+            if (!hasAccess) {
+                // If they don't have specific record, check if they are the "global" owner of the tenant (usually the creator)
+                const isGlobalOwner = await prisma.user.findFirst({
+                    where: { id: req.user.id, tenantId, role: 3 }
+                });
+                if (!isGlobalOwner) {
+                    return res.status(403).json({ success: false, message: 'Access denied to this property' });
+                }
+            }
         }
 
         // Generate slug if not provided
@@ -134,9 +160,11 @@ const getDefaultAmenities = async (unit_category) => {
 const getUnits = async (req, res) => {
     try {
         const { page = 1, limit = 10, propertyId, unitCategory, status, tenantId: queryTenantId, ownerId } = req.query;
-        const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+        const isAdmin = req.user.role === 2;
+        // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+        const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
 
-        if (!tenantId) {
+        if (!tenantId && !isAdmin) {
             return res.status(400).json({
                 success: false,
                 message: 'Tenant ID is required'
@@ -166,12 +194,18 @@ const getUnits = async (req, res) => {
                         some: { userId: ownerId }
                     }
                 };
+            } else if (req.user.role === 3) {
+                // If owner, restrict to properties they have access to
+                where.property = {
+                    userPropertyAccess: {
+                        some: { userId: req.user.id }
+                    }
+                };
             }
         }
 
         if (unitCategory) where.unitCategory = parseInt(unitCategory);
         if (status) where.status = parseInt(status);
-        // Removed restrictive check for owners (role 3) to allow them to see all units in their tenant.
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -232,7 +266,9 @@ const getUnitById = async (req, res) => {
     try {
         const { id } = req.params;
         const { tenantId: queryTenantId } = req.query;
-        const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+        const isAdmin = req.user.role === 2;
+        // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+        const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (req.tenant?.id || req.user?.tenantId);
 
         if (!tenantId) {
             return res.status(400).json({
@@ -301,7 +337,13 @@ const getUnitById = async (req, res) => {
 const updateUnit = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
+        const { tenantId: bodyTenantId } = req.body;
+        const { tenantId: queryTenantId } = req.query;
+
+        const isAdmin = req.user.role === 2;
+        // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+        const tenantId = (isAdmin && (bodyTenantId || queryTenantId)) ? (bodyTenantId || queryTenantId) : (req.tenant?.id || req.user?.tenantId);
+
         const updateData = { ...req.body };
         const pricingData = updateData.unitPricing;
         delete updateData.unitPricing;
@@ -441,7 +483,12 @@ const updateUnit = async (req, res) => {
 const deleteUnit = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
+        const { tenantId: bodyTenantId } = req.body;
+        const { tenantId: queryTenantId } = req.query;
+
+        const isAdmin = req.user.role === 2;
+        // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+        const tenantId = (isAdmin && (bodyTenantId || queryTenantId)) ? (bodyTenantId || queryTenantId) : (req.tenant?.id || req.user?.tenantId);
 
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });

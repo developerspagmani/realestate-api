@@ -4,7 +4,6 @@ const { prisma } = require('../config/database');
 const createProperty = async (req, res) => {
   try {
     const {
-      tenantId,
       propertyType,
       title,
       slug: bodySlug,
@@ -34,6 +33,10 @@ const createProperty = async (req, res) => {
       categoryId,
       videoUrl
     } = req.body;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && req.body.tenantId) ? req.body.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId || !propertyType || !title || !city || !state) {
       return res.status(400).json({
@@ -120,8 +123,14 @@ const createProperty = async (req, res) => {
 const getProperties = async (req, res) => {
   try {
     const { page = 1, limit = 10, status, city, state, propertyType, tenantId: queryTenantId, ownerId, industryType, agentId } = req.query;
+    const pageInt = parseInt(page) || 1;
+    const limitInt = parseInt(limit) || 10;
+    const skip = (pageInt - 1) * limitInt;
+
     const isAdmin = req.user.role === 2;
-    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
+
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({
         success: false,
@@ -154,7 +163,7 @@ const getProperties = async (req, res) => {
     if (effectiveOwnerId) {
       // Check if user has any specific property access defined
       const hasAccessRecords = await prisma.userPropertyAccess.count({
-        where: { userId: effectiveOwnerId, tenantId }
+        where: { userId: effectiveOwnerId, tenantId: tenantId || undefined }
       });
 
       if (hasAccessRecords > 0) {
@@ -163,10 +172,6 @@ const getProperties = async (req, res) => {
         };
       }
     }
-
-    const pageInt = parseInt(page) || 1;
-    const limitInt = parseInt(limit) || 10;
-    const skip = (pageInt - 1) * limitInt;
 
     const [properties, total] = await Promise.all([
       prisma.property.findMany({
@@ -221,7 +226,8 @@ const getPropertyById = async (req, res) => {
     const { id } = req.params;
     const { tenantId: queryTenantId } = req.query;
     const isAdmin = req.user.role === 2;
-    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (req.tenant?.id || req.user?.tenantId);
 
     const where = { id };
     if (tenantId) where.tenantId = tenantId;
@@ -272,7 +278,10 @@ const getPropertyById = async (req, res) => {
 const updateProperty = async (req, res) => {
   try {
     const { id } = req.params;
-    let tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && (req.query.tenantId || req.body.tenantId)) ? (req.query.tenantId || req.body.tenantId) : (req.tenant?.id || req.user?.tenantId);
+
     const updateData = { ...req.body };
     const amenities = updateData.amenities;
     delete updateData.id;
@@ -330,7 +339,9 @@ const updateProperty = async (req, res) => {
 const deleteProperty = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && (req.query.tenantId || req.body.tenantId)) ? (req.query.tenantId || req.body.tenantId) : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({ success: false, message: 'Tenant ID is required' });
@@ -350,337 +361,10 @@ const deleteProperty = async (req, res) => {
   }
 };
 
-// Create unit
-const createUnit = async (req, res) => {
-  try {
-    const {
-      tenantId,
-      propertyId,
-      unitCategory,
-      unitCode,
-      floorNo,
-      capacity,
-      sizeSqft,
-      mainImageId,
-      gallery
-    } = req.body;
-
-    if (!tenantId || !propertyId || !unitCategory) {
-      return res.status(400).json({
-        success: false,
-        message: 'Required fields: tenantId, propertyId, unitCategory'
-      });
-    }
-
-    const unit = await prisma.unit.create({
-      data: {
-        tenantId,
-        propertyId,
-        unitCategory,
-        unitCode,
-        floorNo,
-        capacity,
-        sizeSqft,
-        mainImageId,
-        gallery,
-        status: 1 // 1: available
-      }
-    });
-
-    // Create unit pricing
-    const { pricingModel, price, currency } = req.body;
-    await prisma.unitPricing.create({
-      data: {
-        unitId: unit.id,
-        pricingModel,
-        price,
-        currency: currency || 'USD'
-      }
-    });
-
-    // Add default amenities for unit category
-    const defaultAmenities = await getDefaultAmenities(unitCategory);
-    for (const amenity of defaultAmenities) {
-      await prisma.unitAmenity.create({
-        data: {
-          unitId: unit.id,
-          amenityId: amenity.id
-        }
-      });
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Unit created successfully',
-      data: { unit }
-    });
-  } catch (error) {
-    console.error('Create unit error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error creating unit'
-    });
-  }
-};
-
-// Get default amenities for unit category
-const getDefaultAmenities = async (unit_category) => {
-  const amenityMapping = {
-    1: ['WiFi', 'Air Conditioning', 'Parking'], // Residential
-    2: ['High-Speed Internet', 'Meeting Rooms', 'Kitchen'], // Commercial
-    3: ['24/7 Access', 'Security', 'Storage'], // Industrial
-    4: ['Reception', 'Mail Services', 'Cleaning'] // Mixed Use
-  };
-
-  const amenityNames = amenityMapping[unit_category] || [];
-
-  const amenities = await prisma.amenities.findMany({
-    where: {
-      name: { in: amenityNames },
-      status: 'active'
-    }
-  });
-
-  return amenities;
-};
-
-// Get all units for tenant
-const getUnits = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, propertyId, unitCategory, status, tenantId: queryTenantId, industryType, ownerId } = req.query;
-    const isAdmin = req.user.role === 2;
-    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
-
-    if (!tenantId && !isAdmin && !industryType) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tenant ID or Industry Type is required'
-      });
-    }
-
-    // Build where clause
-    const where = {};
-    if (tenantId) where.tenantId = tenantId;
-
-    if (industryType) {
-      where.tenant = {
-        type: parseInt(industryType)
-      };
-    }
-
-    if (ownerId && isAdmin) {
-      where.property = {
-        userPropertyAccess: {
-          some: { userId: ownerId }
-        }
-      };
-    }
-
-    if (propertyId) where.propertyId = propertyId;
-    if (unitCategory) where.unitCategory = parseInt(unitCategory);
-    if (status) where.status = parseInt(status);
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [units, total] = await Promise.all([
-      prisma.unit.findMany({
-        where,
-        include: {
-          mainImage: true,
-          unitPricing: {
-            select: {
-              price: true,
-              currency: true
-            }
-          },
-          unitAmenities: {
-            include: {
-              amenity: {
-                select: {
-                  name: true,
-                  category: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: parseInt(limit)
-      }),
-      prisma.unit.count({ where })
-    ]);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        units,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / limit)
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Get units error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error fetching units'
-    });
-  }
-};
-
-// Get unit by ID
-const getUnitById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { tenantId } = req.query;
-
-    if (!tenantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tenant ID is required'
-      });
-    }
-
-    const unit = await prisma.unit.findUnique({
-      where: {
-        id,
-        tenantId
-      },
-      include: {
-        mainImage: true,
-        property: {
-          select: {
-            title: true,
-            addressLine1: true,
-            city: true,
-            state: true
-          }
-        },
-        unitPricing: {
-          select: {
-            price: true,
-            currency: true,
-            pricingModel: true
-          }
-        },
-        unitAmenities: {
-          include: {
-            amenity: {
-              select: {
-                name: true,
-                category: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!unit) {
-      return res.status(404).json({
-        success: false,
-        message: 'Unit not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: { unit }
-    });
-  } catch (error) {
-    console.error('Get unit error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error fetching unit'
-    });
-  }
-};
-
-// Update unit
-const updateUnit = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
-    const updateData = { ...req.body };
-    const pricingData = updateData.unitPricing;
-    delete updateData.unitPricing;
-    delete updateData.id;
-    delete updateData.tenantId;
-
-    if (!tenantId) {
-      return res.status(400).json({ success: false, message: 'Tenant ID is required' });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      const unit = await tx.unit.update({
-        where: { id, tenantId },
-        data: updateData
-      });
-
-      if (pricingData && pricingData.length > 0) {
-        // Simple update for the first pricing record
-        const firstPricing = pricingData[0];
-        await tx.unitPricing.updateMany({
-          where: { unitId: id },
-          data: {
-            price: firstPricing.price,
-            pricingModel: firstPricing.pricingModel,
-            currency: firstPricing.currency
-          }
-        });
-      }
-
-      return unit;
-    });
-
-    res.status(200).json({
-      success: true,
-      message: 'Unit updated successfully',
-      data: { unit: result }
-    });
-  } catch (error) {
-    console.error('Update unit error:', error);
-    res.status(500).json({ success: false, message: 'Error updating unit' });
-  }
-};
-
-// Delete unit
-const deleteUnit = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const tenantId = req.query.tenantId || req.body.tenantId || req.tenant?.id;
-
-    if (!tenantId) {
-      return res.status(400).json({ success: false, message: 'Tenant ID is required' });
-    }
-
-    await prisma.unit.delete({
-      where: { id, tenantId }
-    });
-
-    res.status(200).json({
-      success: true,
-      message: 'Unit deleted successfully'
-    });
-  } catch (error) {
-    console.error('Delete unit error:', error);
-    res.status(500).json({ success: false, message: 'Error deleting unit' });
-  }
-};
-
 module.exports = {
   createProperty,
   getProperties,
   getPropertyById,
   updateProperty,
-  deleteProperty,
-  createUnit,
-  getUnits,
-  getUnitById,
-  updateUnit,
-  deleteUnit
+  deleteProperty
 };

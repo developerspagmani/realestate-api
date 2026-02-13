@@ -16,10 +16,14 @@ const getAllMedia = async (req, res) => {
       sortBy = 'createdAt',
       sortOrder = 'desc',
       ownerId,
-      industryType
+      industryType,
+      tenantId: queryTenantId
     } = req.query;
 
-    const tenantId = req.query.tenantId || req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (req.tenant?.id || req.user?.tenantId);
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Build where clause
@@ -97,7 +101,9 @@ const getAllMedia = async (req, res) => {
 const getMediaById = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     const media = await prisma.media.findUnique({
       where: { id },
@@ -166,13 +172,14 @@ const uploadMedia = async (req, res) => {
     }
 
     // Role-based context override
-    let tenantId = req.tenant?.id || req.user?.tenantId;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    let tenantId = (isAdmin && req.body.tenantId) ? req.body.tenantId : (req.tenant?.id || req.user?.tenantId);
     let userId = req.user?.id;
 
     const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    if (req.user.role === 2) { // ADMIN
-      if (req.body.tenantId && isUuid(req.body.tenantId)) tenantId = req.body.tenantId;
+    if (isAdmin) {
       if (req.body.ownerId && isUuid(req.body.ownerId)) userId = req.body.ownerId;
     }
 
@@ -252,7 +259,9 @@ const updateMedia = async (req, res) => {
   try {
     const { id } = req.params;
     const { alt, description, category, filename } = req.body;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && (req.query.tenantId || req.body.tenantId)) ? (req.query.tenantId || req.body.tenantId) : (req.tenant?.id || req.user?.tenantId);
 
     // Check if media exists and belongs to the tenant
     const existingMedia = await prisma.media.findUnique({
@@ -319,7 +328,9 @@ const updateMedia = async (req, res) => {
 const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && (req.query.tenantId || req.body.tenantId)) ? (req.query.tenantId || req.body.tenantId) : (req.tenant?.id || req.user?.tenantId);
 
     // Check if media exists and belongs to the tenant
     const existingMedia = await prisma.media.findUnique({
@@ -367,12 +378,11 @@ const deleteMedia = async (req, res) => {
   }
 };
 
-/**
- * Get media statistics
- */
 const getMediaStats = async (req, res) => {
   try {
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     const where = {};
     if (tenantId) {

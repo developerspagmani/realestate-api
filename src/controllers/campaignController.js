@@ -3,7 +3,9 @@ const { prisma } = require('../config/database');
 // Get all campaigns
 const getAllCampaigns = async (req, res) => {
   try {
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
+
     if (!tenantId) {
       return res.status(400).json({ success: false, message: 'Tenant ID is required' });
     }
@@ -31,7 +33,8 @@ const getAllCampaigns = async (req, res) => {
 // Create campaign
 const createCampaign = async (req, res) => {
   try {
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.body.tenantId) ? req.body.tenantId : (req.tenant?.id || req.user?.tenantId);
     const { name, templateId, groupId, scheduledAt } = req.body;
 
     if (!tenantId) {
@@ -60,7 +63,8 @@ const createCampaign = async (req, res) => {
 const updateCampaign = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && (req.body.tenantId || req.query.tenantId)) ? (req.body.tenantId || req.query.tenantId) : (req.tenant?.id || req.user?.tenantId);
     const { name, templateId, groupId, scheduledAt, status } = req.body;
 
     const campaign = await prisma.campaign.updateMany({
@@ -90,7 +94,8 @@ const updateCampaign = async (req, res) => {
 const deleteCampaign = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     const campaign = await prisma.campaign.deleteMany({
       where: { id, tenantId }
@@ -111,7 +116,8 @@ const deleteCampaign = async (req, res) => {
 const getCampaignById = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     const campaign = await prisma.campaign.findFirst({
       where: { id, tenantId },
@@ -140,7 +146,8 @@ const getCampaignById = async (req, res) => {
 const launchCampaign = async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
     const campaignRecord = await prisma.campaign.findFirst({
       where: { id, tenantId },
@@ -242,7 +249,9 @@ const launchCampaign = async (req, res) => {
 // Get campaign statistics
 const getCampaignStats = async (req, res) => {
   try {
-    const tenantId = req.tenant?.id;
+    const isAdmin = req.user.role === 2;
+    const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
+
     if (!tenantId) {
       return res.status(400).json({ success: false, message: 'Tenant ID is required' });
     }

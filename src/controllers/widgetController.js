@@ -1,4 +1,6 @@
 const { prisma } = require('../config/database');
+const { assignLeadRoundRobin } = require('./agentController');
+const { sendLeadEmail, sendBookingEmail } = require('../utils/emailService');
 
 const widgetController = {
     // Get all widgets for the current tenant
@@ -271,7 +273,7 @@ const widgetController = {
     captureLead: async (req, res) => {
         try {
             const { uniqueId } = req.params;
-            const { name, contact, email: bodyEmail, phone: bodyPhone, source, notes, propertyId, unitId } = req.body;
+            const { name, contact, email: bodyEmail, phone: bodyPhone, source, notes, propertyId, unitId, startAt: bodyStartAt, endAt: bodyEndAt } = req.body;
 
             const widget = await prisma.widget.findUnique({
                 where: { uniqueId }
@@ -294,6 +296,8 @@ const widgetController = {
                 }
             }
 
+            const isBooking = req.body.isBooking === true || req.body.isBooking === 'true';
+
             // Upsert or Check-Update to avoid duplicates for the same person
             let lead = await prisma.lead.findFirst({
                 where: {
@@ -306,13 +310,21 @@ const widgetController = {
             });
 
             if (lead) {
+                // Preserve existing tags and add Booking if needed
+                const currentPrefs = lead.preferences || {};
+                const currentTags = Array.isArray(currentPrefs.tags) ? currentPrefs.tags : [];
+                if (isBooking && !currentTags.includes('Booking')) {
+                    currentTags.push('Booking');
+                }
+
                 lead = await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
-                        notes: (lead.notes || '') + `\n[Update] Re-engaged via ${source === 'widget_chatbot' ? 'chatbot' : 'widget form'}.`,
+                        notes: (lead.notes || '') + `\n[Update] Re-engaged via ${source === 'widget_chatbot' ? 'chatbot' : (isBooking ? 'booking form' : 'widget form')}.`,
                         updatedAt: new Date(),
                         propertyId: propertyId || lead.propertyId,
-                        unitId: unitId || lead.unitId
+                        unitId: unitId || lead.unitId,
+                        preferences: { ...currentPrefs, tags: currentTags }
                     }
                 });
             } else {
@@ -322,18 +334,19 @@ const widgetController = {
                         email,
                         phone,
                         source: source === 'widget_chatbot' ? 7 : (Number(source) || 1),
-                        notes: notes || 'Lead captured from widget.',
+                        notes: notes || (isBooking ? 'Booking request captured from widget.' : 'Lead captured from widget.'),
                         tenantId: widget.tenantId,
-                        propertyId,
                         unitId,
-                        status: 1
+                        propertyId,
+                        status: 1,
+                        preferences: isBooking ? { tags: ['Booking'] } : {}
                     }
                 });
             }
 
-            // Record the interaction
-            const interactionType = source === 'widget_chatbot' ? 'CHAT_INIT' : 'FORM_SUBMIT';
-            const scoreWeight = interactionType === 'CHAT_INIT' ? 10 : 20;
+            // Record the interaction and handle booking module entry
+            const interactionType = isBooking ? 'BOOKING_REQUEST' : (source === 'widget_chatbot' ? 'CHAT_INIT' : 'FORM_SUBMIT');
+            const scoreWeight = interactionType === 'CHAT_INIT' ? 10 : (isBooking ? 30 : 20);
 
             await prisma.$transaction(async (tx) => {
                 await tx.leadInteraction.create({
@@ -357,7 +370,76 @@ const widgetController = {
                         updatedAt: new Date()
                     }
                 });
+
+                // Create a booking record if it's a booking request and we have a unit
+                if (isBooking && unitId) {
+                    const startAt = bodyStartAt ? new Date(bodyStartAt) : new Date();
+                    const endAt = bodyEndAt ? new Date(bodyEndAt) : new Date(startAt.getTime() + 60 * 60 * 1000);
+
+                    await tx.booking.create({
+                        data: {
+                            tenantId: widget.tenantId,
+                            propertyId: propertyId || null,
+                            unitId: unitId || null,
+                            userId: lead.userId || null, // Link to user if lead is already converted
+                            startAt: startAt,
+                            endAt: endAt,
+                            status: 1, // pending
+                            notes: `Automated entry from website booking module.\nLead: ${lead.name}\nEmail: ${lead.email || 'N/A'}\nPhone: ${lead.phone || 'N/A'}`
+                        }
+                    });
+                }
             });
+
+            // Auto-assign to agent using Round Robin
+            try {
+                const assignedAgent = await assignLeadRoundRobin(widget.tenantId, lead.id);
+                if (assignedAgent) {
+                    console.log(`Lead ${lead.id} auto-assigned to Agent ${assignedAgent.id}`);
+                }
+            } catch (assignError) {
+                console.error('Error in auto-assignment:', assignError);
+            }
+
+            // Notifications
+            try {
+                const tenant = await prisma.tenant.findUnique({ where: { id: widget.tenantId } });
+                const settings = tenant?.settings || {};
+
+                // Notify Admin if enabled
+                if (settings.notifications?.emailLeads) {
+                    const owner = await prisma.user.findFirst({
+                        where: { tenantId: widget.tenantId, role: 3 },
+                        select: { email: true }
+                    });
+                    if (owner) {
+                        await sendLeadEmail(owner.email, lead.name, {
+                            email: lead.email,
+                            phone: lead.phone,
+                            message: lead.notes || notes
+                        });
+                    }
+                }
+
+                // Notify User if it's a booking
+                if (isBooking && email) {
+                    // Get unit/property details for email
+                    const unit = unitId ? await prisma.unit.findUnique({
+                        where: { id: unitId },
+                        include: { property: true }
+                    }) : null;
+
+                    await sendBookingEmail(email, lead.name, {
+                        unitCode: unit?.unitCode || 'Unit',
+                        propertyName: unit?.property?.title || 'Property',
+                        date: new Date().toLocaleDateString(),
+                        price: 'FREE VISIT',
+                        status: 'Pending Confirmation'
+                    });
+                }
+            } catch (notifError) {
+                console.error('Error in lead notifications:', notifError);
+            }
 
             res.json({ success: true, data: lead });
         } catch (error) {

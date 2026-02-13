@@ -21,12 +21,13 @@ const getAllLeads = async (req, res) => {
     } = req.query;
 
     const isAdmin = req.user.role === 2;
-    const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
 
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({
         success: false,
-        message: 'Tenant ID or Industry Type required'
+        message: 'Tenant ID required'
       });
     }
 
@@ -182,7 +183,10 @@ const getLeadById = async (req, res) => {
   try {
     const { id } = req.params;
     const { tenantId: queryTenantId } = req.query;
-    const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -262,7 +266,7 @@ const getLeadById = async (req, res) => {
 const createLead = async (req, res) => {
   try {
     const {
-      tenantId,
+      tenantId: bodyTenantId,
       name,
       email,
       phone,
@@ -277,6 +281,10 @@ const createLead = async (req, res) => {
       notes,
       agentId // manual assignment
     } = req.body;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && bodyTenantId) ? bodyTenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -412,7 +420,12 @@ const createLead = async (req, res) => {
 const updateLeadStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, notes, tenantId } = req.body;
+    const { status, notes, tenantId: bodyTenantId } = req.body;
+    const { tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && (bodyTenantId || queryTenantId)) ? (bodyTenantId || queryTenantId) : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -477,7 +490,11 @@ const updateLeadStatus = async (req, res) => {
 const deleteLead = async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenantId } = req.query;
+    const { tenantId: queryTenantId } = req.query;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({
@@ -513,8 +530,10 @@ const deleteLead = async (req, res) => {
 const getLeadStats = async (req, res) => {
   try {
     const { period = 'month', tenantId: queryTenantId, ownerId, industryType } = req.query;
-    const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+
     const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
 
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({
@@ -630,7 +649,7 @@ const updateLead = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      tenantId,
+      tenantId: bodyTenantId,
       name,
       email,
       phone,
@@ -645,6 +664,10 @@ const updateLead = async (req, res) => {
       notes,
       agentId // Allow updating agent
     } = req.body;
+
+    const isAdmin = req.user.role === 2;
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && bodyTenantId) ? bodyTenantId : (req.tenant?.id || req.user?.tenantId);
 
     if (!tenantId) {
       return res.status(400).json({

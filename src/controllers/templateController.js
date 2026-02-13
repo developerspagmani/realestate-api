@@ -3,7 +3,7 @@ const { prisma } = require('../config/database');
 // Get all email templates
 const getAllTemplates = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
         }
@@ -23,7 +23,7 @@ const getAllTemplates = async (req, res) => {
 // Create email template
 const createTemplate = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, subject, content, type, isDefault } = req.body;
 
         if (!tenantId) {
@@ -52,7 +52,7 @@ const createTemplate = async (req, res) => {
 const deleteTemplate = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         await prisma.emailTemplate.deleteMany({
             where: { id, tenantId }
@@ -69,7 +69,7 @@ const deleteTemplate = async (req, res) => {
 const updateTemplate = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { name, subject, content, type, isDefault } = req.body;
 
         const template = await prisma.emailTemplate.updateMany({

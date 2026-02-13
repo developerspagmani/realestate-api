@@ -6,15 +6,24 @@ const trackOpen = async (req, res) => {
         const { c: campaignId, l: leadId, w: workflowId } = req.query;
 
         if (leadId) {
-            // Log the interaction
-            await prisma.leadInteraction.create({
-                data: {
-                    leadId,
-                    type: 'EMAIL_OPEN',
-                    metadata: { campaignId, workflowId },
-                    scoreWeight: 1
-                }
+            // Get lead to find its tenantId
+            const lead = await prisma.lead.findUnique({
+                where: { id: leadId },
+                select: { id: true, tenantId: true }
             });
+
+            if (lead) {
+                // Log the interaction
+                await prisma.leadInteraction.create({
+                    data: {
+                        tenantId: lead.tenantId,
+                        leadId,
+                        type: 'EMAIL_OPEN',
+                        metadata: { campaignId, workflowId },
+                        scoreWeight: 1
+                    }
+                });
+            }
 
             // Update campaign stats if applicable
             if (campaignId) {
@@ -61,15 +70,24 @@ const trackClick = async (req, res) => {
         const { c: campaignId, l: leadId, w: workflowId, u: targetUrl } = req.query;
 
         if (leadId) {
-            // Log the interaction
-            await prisma.leadInteraction.create({
-                data: {
-                    leadId,
-                    type: 'EMAIL_CLICK',
-                    metadata: { campaignId, workflowId, targetUrl },
-                    scoreWeight: 3
-                }
+            // Get lead to find its tenantId
+            const lead = await prisma.lead.findUnique({
+                where: { id: leadId },
+                select: { id: true, tenantId: true }
             });
+
+            if (lead) {
+                // Log the interaction
+                await prisma.leadInteraction.create({
+                    data: {
+                        tenantId: lead.tenantId,
+                        leadId,
+                        type: 'EMAIL_CLICK',
+                        metadata: { campaignId, workflowId, targetUrl },
+                        scoreWeight: 3
+                    }
+                });
+            }
 
             // Update campaign stats if applicable
             if (campaignId) {

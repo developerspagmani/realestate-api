@@ -12,23 +12,25 @@ const generateToken = (userId, role) => {
   });
 };
 
-// SEC-09 fix: In-memory brute force protection
-const loginAttempts = new Map();
+// SEC-09 fix: Persistent brute force protection using DB
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
 
-const checkLoginAttempts = (identifier) => {
-  const attempts = loginAttempts.get(identifier);
+const checkLoginAttempts = async (identifier) => {
+  const attempts = await prisma.loginAttempt.findUnique({
+    where: { identifier }
+  });
+
   if (!attempts) return { allowed: true };
 
   // Reset if lockout expired
-  if (attempts.lockedUntil && Date.now() > attempts.lockedUntil) {
-    loginAttempts.delete(identifier);
+  if (attempts.lockedUntil && Date.now() > new Date(attempts.lockedUntil).getTime()) {
+    await prisma.loginAttempt.delete({ where: { identifier } });
     return { allowed: true };
   }
 
   if (attempts.lockedUntil) {
-    const remainingMs = attempts.lockedUntil - Date.now();
+    const remainingMs = new Date(attempts.lockedUntil).getTime() - Date.now();
     const remainingMins = Math.ceil(remainingMs / 60000);
     return { allowed: false, remainingMins };
   }
@@ -36,19 +38,36 @@ const checkLoginAttempts = (identifier) => {
   return { allowed: true };
 };
 
-const recordFailedLogin = (identifier) => {
-  const attempts = loginAttempts.get(identifier) || { count: 0 };
-  attempts.count += 1;
+const recordFailedLogin = async (identifier) => {
+  const attempts = await prisma.loginAttempt.findUnique({
+    where: { identifier }
+  });
 
-  if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
-    attempts.lockedUntil = Date.now() + LOCKOUT_DURATION;
+  if (!attempts) {
+    await prisma.loginAttempt.create({
+      data: { identifier, count: 1 }
+    });
+    return;
   }
 
-  loginAttempts.set(identifier, attempts);
+  const newCount = attempts.count + 1;
+  const lockedUntil = newCount >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION) : null;
+
+  await prisma.loginAttempt.update({
+    where: { identifier },
+    data: {
+      count: newCount,
+      lockedUntil
+    }
+  });
 };
 
-const clearLoginAttempts = (identifier) => {
-  loginAttempts.delete(identifier);
+const clearLoginAttempts = async (identifier) => {
+  try {
+    await prisma.loginAttempt.delete({ where: { identifier } });
+  } catch (e) {
+    // Ignore if already deleted
+  }
 };
 
 // Register user (and optional Tenant)
@@ -306,7 +325,7 @@ const login = async (req, res) => {
     const loginIdentifier = email || phone;
 
     // SEC-09: Check brute force lockout
-    const attemptCheck = checkLoginAttempts(loginIdentifier);
+    const attemptCheck = await checkLoginAttempts(loginIdentifier);
     if (!attemptCheck.allowed) {
       return res.status(429).json({
         success: false,
@@ -328,7 +347,7 @@ const login = async (req, res) => {
     });
 
     if (!user) {
-      recordFailedLogin(loginIdentifier);
+      await recordFailedLogin(loginIdentifier);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -377,7 +396,7 @@ const login = async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
-      recordFailedLogin(loginIdentifier);
+      await recordFailedLogin(loginIdentifier);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -385,7 +404,7 @@ const login = async (req, res) => {
     }
 
     // SEC-09: Clear failed attempts on successful login
-    clearLoginAttempts(loginIdentifier);
+    await clearLoginAttempts(loginIdentifier);
 
     // Generate token
     const token = generateToken(user.id, user.role);
@@ -437,8 +456,9 @@ const getMe = async (req, res) => {
       }
     });
 
+    const { passwordHash, activationToken, resetPasswordToken, resetPasswordExpires, ...safeUserData } = user;
     const userData = {
-      ...user,
+      ...safeUserData,
       subscriptionStatus: user.tenant?.subscriptionStatus || (user.role === 3 ? 3 : 1),
       subscriptionExpiresAt: user.tenant?.subscriptionExpiresAt || null
     };
@@ -604,6 +624,42 @@ const resetPassword = async (req, res) => {
   }
 };
 
+/**
+ * Logout user by blacklisting their token
+ */
+const logout = async (req, res) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(200).json({ success: true, message: 'Logged out successfully' });
+    }
+
+    // Decode token to get expiration
+    const decoded = jwt.decode(token);
+
+    if (decoded && decoded.exp) {
+      await prisma.blacklistedToken.create({
+        data: {
+          token,
+          expiresAt: new Date(decoded.exp * 1000)
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(200).json({ // Still return 200 for logout
+      success: true,
+      message: 'Logged out successfully'
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -612,4 +668,5 @@ module.exports = {
   updatePassword,
   forgotPassword,
   resetPassword,
+  logout
 };

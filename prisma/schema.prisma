@@ -52,6 +52,13 @@ model Tenant {
   marketingWorkflows MarketingWorkflow[]
   formBuilders      FormBuilder[]
   propertyCategories PropertyCategory[]
+  
+  // Isolated Tracking
+  payments          Payment[]
+  commissions       Commission[]
+  campaignLogs      CampaignLog[]
+  workflowLogs      WorkflowLog[]
+  leadInteractions  LeadInteraction[]
 
   @@map("tenants")
 }
@@ -191,6 +198,7 @@ model Property {
   propertyAmenities PropertyAmenity[]
   units        Unit[]
   leads        Lead[]
+  bookings     Booking[]
   userPropertyAccess UserPropertyAccess[]
 
   workspace3D  Property3DConfig?
@@ -337,9 +345,14 @@ model UnitAmenity {
 model Booking {
   id              String   @id @default(uuid()) @db.Uuid
   tenantId        String?  @db.Uuid @map("tenant_id")
+  propertyId      String?  @db.Uuid @map("property_id")
   unitId          String?  @db.Uuid @map("unit_id")
   userId          String?  @db.Uuid @map("user_id")
+  leadId          String?  @db.Uuid @map("lead_id")
   agentId         String?  @db.Uuid @map("agent_id")
+  guestName       String?  @map("guest_name")
+  guestEmail      String?  @map("guest_email")
+  guestPhone      String?  @map("guest_phone")
   startAt         DateTime @map("start_at")
   endAt           DateTime @map("end_at")
   status          Int      @default(1) // 1: pending, 2: confirmed, 3: cancelled, 4: completed, 5: no_show
@@ -353,13 +366,16 @@ model Booking {
 
   // Relations
   tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  property        Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   unit            Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lead            Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
   agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
   payments        Payment[]
   commissions     Commission[]
 
   @@index([tenantId])
+  @@index([propertyId])
   @@index([unitId])
   @@index([userId])
   @@index([createdAt])
@@ -415,6 +431,7 @@ model Lead {
   audienceGroups AudienceGroup[] @relation("LeadAudienceGroups")
   interactions   LeadInteraction[]
   enrollments    WorkflowEnrollment[]
+  bookings       Booking[]
 
   @@index([tenantId])
   @@index([propertyId])
@@ -443,6 +460,7 @@ model WorkflowEnrollment {
 
 model WorkflowLog {
   id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @db.Uuid @map("tenant_id")
   enrollmentId String   @db.Uuid @map("enrollment_id")
   stepId       String   @map("step_id")
   actionType   String   // EMAIL, SMS, DELAY, TAG
@@ -450,21 +468,26 @@ model WorkflowLog {
   result       Json?
   occurredAt   DateTime @default(now()) @map("occurred_at")
 
+  tenant       Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   enrollment   WorkflowEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("workflow_logs")
 }
 
 model LeadInteraction {
   id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid @map("tenant_id")
   leadId      String   @db.Uuid @map("lead_id")
   type        String   // EMAIL_OPEN, EMAIL_CLICK, PROPERTY_VIEW, FORM_SUBMIT, CHAT_INIT
   metadata    Json?    // Store propertyId, campaignId, etc.
   scoreWeight Int      @default(0) @map("score_weight")
   occurredAt  DateTime @default(now()) @map("occurred_at")
 
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("lead_interactions")
 }
 
@@ -582,6 +605,7 @@ model Widget {
 
 model Payment {
   id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String?  @db.Uuid @map("tenant_id")
   bookingId       String?  @db.Uuid @map("booking_id")
   userId          String?  @db.Uuid @map("user_id")
   amount          Decimal  @db.Decimal(15, 2)
@@ -591,9 +615,12 @@ model Payment {
   transactionId   String?  @unique @map("transaction_id")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   booking         Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
   @@map("payments")
 }
 model Property3DConfig {
@@ -636,6 +663,7 @@ model Agent {
 
 model Commission {
   id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid @map("tenant_id")
   agentId     String   @db.Uuid @map("agent_id")
   bookingId   String?  @db.Uuid @map("booking_id")
   amount      Decimal  @db.Decimal(15, 2)
@@ -643,9 +671,12 @@ model Commission {
   status      String   @default("PENDING") // PENDING, PAID, CANCELLED
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
   @@index([agentId])
   @@index([bookingId])
   @@map("commissions")
@@ -752,6 +783,7 @@ model Campaign {
 
 model CampaignLog {
   id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid @map("tenant_id")
   campaignId  String   @db.Uuid @map("campaign_id")
   leadId      String   @db.Uuid @map("lead_id")
   status      String   // SENT, DELIVERED, OPENED, CLICKED, FAILED
@@ -759,8 +791,10 @@ model CampaignLog {
   userAgent   String?  @map("user_agent")
   occurredAt  DateTime @default(now()) @map("occurred_at")
 
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("campaign_logs")
 }
 
@@ -796,4 +830,23 @@ model FormBuilder {
 
   @@index([tenantId])
   @@map("form_builders")
+}
+model LoginAttempt {
+  id          String   @id @default(uuid()) @db.Uuid
+  identifier  String   @unique // email or IP
+  count       Int      @default(0)
+  lockedUntil DateTime? @map("locked_until")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("login_attempts")
+}
+
+model BlacklistedToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique @db.Text
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([token])
+  @@map("blacklisted_tokens")
 }

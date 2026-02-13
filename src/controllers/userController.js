@@ -124,8 +124,8 @@ const getUsers = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const isAdmin = req.user.role === 2;
-    // For system admins, don't default to the request's tenant context unless explicitly requested via query
-    const tenantId = queryTenantId || (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
+    // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? null : (req.tenant?.id || req.user?.tenantId));
 
     // For system admins, tenantId is optional to see all users across tenants
     if (!tenantId && !isAdmin && !industryType) {
@@ -253,6 +253,11 @@ const getUser = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // SEC-01 fix: Prevent IDOR - ensure user belongs to same tenant if not admin
+    if (req.user.role !== 2 && user.tenantId !== req.user.tenantId) {
+      return res.status(403).json({ success: false, message: 'Access denied. User belongs to another tenant.' });
     }
 
     res.status(200).json({ success: true, data: { user } });

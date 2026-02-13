@@ -490,16 +490,17 @@ const getMyProfile = async (req, res) => {
 // Assign Property to Agent
 const assignProperty = async (req, res) => {
     try {
-        const { agentId, propertyId, commissionRate, isPrimary, notes } = req.body;
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.body.tenantId || req.user.tenantId) : req.user.tenantId;
 
-        // Ensure both exist
+        // Ensure both exist and belong to the correct tenant
         const [agent, property] = await Promise.all([
-            prisma.agent.findUnique({ where: { id: agentId } }),
-            prisma.property.findUnique({ where: { id: propertyId } })
+            prisma.agent.findFirst({ where: { id: agentId, tenantId } }),
+            prisma.property.findFirst({ where: { id: propertyId, tenantId } })
         ]);
 
         if (!agent || !property) {
-            return res.status(404).json({ success: false, message: 'Agent or Property not found' });
+            return res.status(404).json({ success: false, message: 'Agent or Property not found or access denied' });
         }
 
         // Check if already assigned
@@ -533,6 +534,18 @@ const assignProperty = async (req, res) => {
 const getAgentProperties = async (req, res) => {
     try {
         const { id } = req.params; // Agent ID
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.query.tenantId || req.user.tenantId) : req.user.tenantId;
+
+        // Verify agent belongs to tenant
+        const agent = await prisma.agent.findFirst({
+            where: { id, tenantId }
+        });
+
+        if (!agent) {
+            return res.status(404).json({ success: false, message: 'Agent not found or access denied' });
+        }
+
         const assignments = await prisma.agentProperty.findMany({
             where: { agentId: id },
             include: {
@@ -554,6 +567,18 @@ const getAgentProperties = async (req, res) => {
 const unassignProperty = async (req, res) => {
     try {
         const { id } = req.params; // Assignment ID
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.query.tenantId || req.user.tenantId) : req.user.tenantId;
+
+        const assignment = await prisma.agentProperty.findFirst({
+            where: { id },
+            include: { agent: true }
+        });
+
+        if (!assignment || (!isAdmin && assignment.agent.tenantId !== tenantId)) {
+            return res.status(404).json({ success: false, message: 'Assignment not found or access denied' });
+        }
+
         await prisma.agentProperty.delete({
             where: { id }
         });
@@ -569,13 +594,15 @@ const unassignProperty = async (req, res) => {
 const assignLead = async (req, res) => {
     try {
         const { agentId, leadId, isPrimary, notes } = req.body;
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.body.tenantId || req.user.tenantId) : req.user.tenantId;
 
         const [agent, lead] = await Promise.all([
-            prisma.agent.findUnique({ where: { id: agentId } }),
-            prisma.lead.findUnique({ where: { id: leadId } })
+            prisma.agent.findFirst({ where: { id: agentId, tenantId } }),
+            prisma.lead.findFirst({ where: { id: leadId, tenantId } })
         ]);
 
-        if (!agent || !lead) return res.status(404).json({ success: false, message: 'Agent or Lead not found' });
+        if (!agent || !lead) return res.status(404).json({ success: false, message: 'Agent or Lead not found or access denied' });
 
         const existing = await prisma.agentLead.findFirst({
             where: { agentId, leadId }
@@ -615,6 +642,17 @@ const assignLead = async (req, res) => {
 const getAgentLeads = async (req, res) => {
     try {
         const { id } = req.params; // Agent ID
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.query.tenantId || req.user.tenantId) : req.user.tenantId;
+
+        const agent = await prisma.agent.findFirst({
+            where: { id, tenantId }
+        });
+
+        if (!agent) {
+            return res.status(404).json({ success: false, message: 'Agent not found or access denied' });
+        }
+
         const assignments = await prisma.agentLead.findMany({
             where: { agentId: id },
             include: {
@@ -635,6 +673,18 @@ const getAgentLeads = async (req, res) => {
 const unassignLead = async (req, res) => {
     try {
         const { id } = req.params; // Assignment ID
+        const isAdmin = req.user?.role === 2;
+        const tenantId = isAdmin ? (req.query.tenantId || req.user.tenantId) : req.user.tenantId;
+
+        const assignment = await prisma.agentLead.findFirst({
+            where: { id },
+            include: { agent: true }
+        });
+
+        if (!assignment || (!isAdmin && assignment.agent.tenantId !== tenantId)) {
+            return res.status(404).json({ success: false, message: 'Assignment not found or access denied' });
+        }
+
         await prisma.agentLead.delete({ where: { id } });
         res.status(200).json({ success: true, message: 'Lead unassigned' });
     } catch (error) {

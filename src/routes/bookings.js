@@ -11,7 +11,8 @@ const {
   checkAvailability,
   getAllBookings,
   getBookingStats,
-  getUserBookings
+  getUserBookings,
+  sendVisitInfo
 } = require('../controllers/bookingController');
 
 const router = express.Router();
@@ -34,6 +35,7 @@ router.get('/:id', getBookingById);
 router.put('/:id/cancel', cancelBooking);
 router.put('/:id', authorize(2, 3), validate(schemas.updateBooking), updateBooking);
 router.put('/:id/status', authorize(2, 3), updateBookingStatus);
+router.put('/:id/send-info', authorize(2, 3), sendVisitInfo);
 router.delete('/:id', authorize(2, 3), deleteBooking);
 
 module.exports = router;

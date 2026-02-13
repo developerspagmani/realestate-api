@@ -3,7 +3,9 @@ const { prisma } = require('../config/database');
 // Get all audience groups
 const getAllAudienceGroups = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
+
         if (!tenantId) {
             return res.status(400).json({ success: false, message: 'Tenant ID is required' });
         }
@@ -29,7 +31,8 @@ const getAllAudienceGroups = async (req, res) => {
 const getAudienceGroupById = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
         const group = await prisma.audienceGroup.findFirst({
             where: { id, tenantId },
@@ -57,7 +60,8 @@ const getAudienceGroupById = async (req, res) => {
 // Create audience group
 const createAudienceGroup = async (req, res) => {
     try {
-        const tenantId = req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.body.tenantId) ? req.body.tenantId : (req.tenant?.id || req.user?.tenantId);
         const { name, description, isDynamic, filters, leadIds, propertyId, listingId } = req.body;
 
         if (!tenantId) {
@@ -78,7 +82,10 @@ const createAudienceGroup = async (req, res) => {
                 filters: extendedFilters,
                 tenantId,
                 leads: leadIds && leadIds.length > 0 ? {
-                    connect: leadIds.map(id => ({ id }))
+                    connect: await prisma.lead.findMany({
+                        where: { id: { in: leadIds }, tenantId },
+                        select: { id: true }
+                    })
                 } : undefined
             },
             include: {
@@ -99,7 +106,8 @@ const createAudienceGroup = async (req, res) => {
 const deleteAudienceGroup = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && req.query.tenantId) ? req.query.tenantId : (req.tenant?.id || req.user?.tenantId);
 
         await prisma.audienceGroup.deleteMany({
             where: { id, tenantId }
@@ -116,7 +124,8 @@ const deleteAudienceGroup = async (req, res) => {
 const updateAudienceGroup = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant?.id;
+        const isAdmin = req.user.role === 2;
+        const tenantId = (isAdmin && (req.body.tenantId || req.query.tenantId)) ? (req.body.tenantId || req.query.tenantId) : (req.tenant?.id || req.user?.tenantId);
         const { name, description, isDynamic, filters, leadIds, propertyId, listingId } = req.body;
 
         const group = await prisma.audienceGroup.update({
@@ -133,7 +142,10 @@ const updateAudienceGroup = async (req, res) => {
                     propertyId: propertyId || listingId
                 } : undefined,
                 leads: leadIds ? {
-                    set: leadIds.map(id => ({ id }))
+                    set: await prisma.lead.findMany({
+                        where: { id: { in: leadIds }, tenantId },
+                        select: { id: true }
+                    })
                 } : undefined
             },
             include: {

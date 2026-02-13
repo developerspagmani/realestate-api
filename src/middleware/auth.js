@@ -12,6 +12,18 @@ const auth = async (req, res, next) => {
       });
     }
 
+    // SEC-10 fix: Check if token is blacklisted
+    const isBlacklisted = await prisma.blacklistedToken.findUnique({
+      where: { token }
+    });
+
+    if (isBlacklisted) {
+      return res.status(401).json({
+        success: false,
+        message: 'Session expired. Please login again.'
+      });
+    }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from database
