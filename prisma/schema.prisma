@@ -59,6 +59,8 @@ model Tenant {
   campaignLogs      CampaignLog[]
   workflowLogs      WorkflowLog[]
   leadInteractions  LeadInteraction[]
+  websites          Website[]
+  pages             Page[]
 
   @@map("tenants")
 }
@@ -205,6 +207,7 @@ model Property {
   widgets      Widget[]
   agentProperties AgentProperty[]
   metadata        Json?    @default("{}")
+  websites        Website[]
 
   @@index([tenantId])
   @@index([categoryId])
@@ -547,6 +550,7 @@ model Media {
   propertyFloorPlans Property[] @relation("PropertyFloorPlan")
   propertyBrochures Property[] @relation("PropertyBrochure")
   unitMainImages     Unit[]     @relation("UnitMainImage")
+  pageFeatureImages  Page[]     @relation("PageFeatureImage")
 
   @@index([tenantId])
   @@map("media")
@@ -601,6 +605,49 @@ model Widget {
   @@index([tenantId])
   @@index([propertyId])
   @@map("widgets")
+}
+
+model Website {
+  id            String   @id @default(uuid()) @db.Uuid
+  slug          String   @unique
+  customDomain  String?  @unique @map("custom_domain")
+  tenantId      String?  @db.Uuid @map("tenant_id")
+  propertyId    String?  @db.Uuid @map("property_id")
+  name          String
+  configuration Json     // Page builder settings: colors, hero, components
+  status        Int      @default(1) // 1: active, 2: draft
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("websites")
+}
+
+model Page {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String?  @db.Uuid @map("tenant_id")
+  title           String
+  slug            String   @unique
+  content         String?  @db.Text
+  featureImageId  String?  @db.Uuid @map("feature_image_id")
+  seoTitle        String?  @map("seo_title")
+  seoDescription  String?  @map("seo_description")
+  seoKeywords     String?  @map("seo_keywords")
+  status          Int      @default(1) // 1: Draft, 2: Published
+  publishedAt     DateTime? @map("published_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  featureImage    Media?   @relation("PageFeatureImage", fields: [featureImageId], references: [id])
+
+  @@index([tenantId])
+  @@map("pages")
 }
 
 model Payment {

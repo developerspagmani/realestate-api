@@ -30,6 +30,7 @@ const tenantRoutes = require('./routes/tenants');
 const propertyRoutes = require('./routes/properties');
 const unitRoutes = require('./routes/units');
 const widgetRoutes = require('./routes/widgets');
+const websiteRoutes = require('./routes/websites');
 const moduleRoutes = require('./routes/modules');
 const property3DRoutes = require('./routes/property3D');
 const publicRoutes = require('./routes/public');
@@ -39,6 +40,7 @@ const marketingRoutes = require('./routes/marketing');
 const categoryRoutes = require('./routes/categories');
 const planRoutes = require('./routes/plans');
 const licenseKeyRoutes = require('./routes/licenseKeys');
+const cmsRoutes = require('./routes/cmsRoutes');
 
 
 
@@ -123,6 +125,7 @@ app.use('/api/tenants', tenantRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/units', unitRoutes);
 app.use('/api/widgets', widgetRoutes);
+app.use('/api/websites', websiteRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/property-3d', property3DRoutes);
@@ -132,6 +135,7 @@ app.use('/api/marketing', marketingRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/license-keys', licenseKeyRoutes);
+app.use('/api/cms', cmsRoutes);
 
 
 

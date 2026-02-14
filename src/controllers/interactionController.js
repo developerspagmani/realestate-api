@@ -6,7 +6,9 @@ const SCORING_RULES = {
     'EMAIL_CLICK': 3,
     'PROPERTY_VIEW': 5,
     'FORM_SUBMIT': 20,
-    'CHAT_INIT': 10
+    'CHAT_INIT': 10,
+    'BOOKING_REQUEST': 30,
+    'WEBSITE_INQUIRY': 20
 };
 
 /**

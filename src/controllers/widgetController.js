@@ -169,7 +169,8 @@ const widgetController = {
                     tenant: {
                         select: {
                             name: true,
-                            type: true
+                            type: true,
+                            country: true
                         }
                     }
                 }
@@ -288,8 +289,11 @@ const widgetController = {
 
             // Fallback to contact field if email/phone not explicitly provided (e.g. from chatbot)
             if (contact && !email && !phone) {
-                const isEmail = contact.includes('@');
-                if (isEmail) {
+                if (contact.includes('|')) {
+                    const [e, p] = contact.split('|').map(s => s.trim());
+                    email = e?.toLowerCase();
+                    phone = p;
+                } else if (contact.includes('@')) {
                     email = contact.toLowerCase();
                 } else {
                     phone = contact;
@@ -352,14 +356,10 @@ const widgetController = {
                 await tx.leadInteraction.create({
                     data: {
                         leadId: lead.id,
+                        tenantId: widget.tenantId,
                         type: interactionType,
-                        metadata: {
-                            propertyId,
-                            unitId,
-                            widgetId: widget.id,
-                            uniqueId
-                        },
-                        scoreWeight
+                        notes: `Inquiry from ${source === 'widget_chatbot' ? 'Chatbot' : 'Widget'}.`,
+                        scoreWeight: scoreWeight
                     }
                 });
 
