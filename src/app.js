@@ -68,8 +68,8 @@ app.use(helmet());
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  'http://localhost:3000',
-  'http://localhost:3001',
+  'https://app.virpanix.com',
+  'https://realestate-api-seven.vercel.app',
 ].filter(Boolean);
 
 app.use(cors({
