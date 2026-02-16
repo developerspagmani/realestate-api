@@ -167,11 +167,17 @@ const websiteController = {
         try {
             const { slugOrDomain } = req.params;
 
+            const normalizedDomain = slugOrDomain.replace(/^www\./, '');
+            const wwwDomain = `www.${normalizedDomain}`;
+
             const website = await prisma.website.findFirst({
                 where: {
                     OR: [
                         { slug: slugOrDomain },
-                        { customDomain: slugOrDomain }
+                        { customDomain: slugOrDomain },
+                        // Try matching with/without www just in case
+                        { customDomain: normalizedDomain },
+                        { customDomain: wwwDomain }
                     ]
                 },
                 include: {
