@@ -11,43 +11,78 @@ class PropertyMatchService {
                 include: {
                     interactions: {
                         where: {
-                            type: { in: ['PROPERTY_VIEW', 'FORM_SUBMIT', 'CHAT_INIT', 'UNIT_VIEW'] }
+                            type: { in: ['PROPERTY_VIEW', 'FORM_SUBMIT', 'CHAT_INIT', 'UNIT_VIEW', 'CHAT_CHOICE'] }
                         },
                         orderBy: { occurredAt: 'desc' },
-                        take: 20
+                        take: 30
                     }
                 }
             });
 
             if (!lead || lead.interactions.length === 0) return null;
 
-            // Extract property details from interactions
+            // Extract explicit preferences from CHAT_CHOICE
+            const chatChoices = lead.interactions.filter(i => i.type === 'CHAT_CHOICE' && i.metadata);
+            const explicitLocations = chatChoices.filter(i => i.metadata.step === 'LOCATION' || i.metadata.step === 'CITY').flatMap(i => Array.isArray(i.metadata.answer) ? i.metadata.answer : [i.metadata.answer]);
+            const explicitTypes = chatChoices.filter(i => i.metadata.step === 'TYPE').flatMap(i => Array.isArray(i.metadata.answer) ? i.metadata.answer : [i.metadata.answer]);
+            const explicitBudgetRaw = chatChoices.find(i => i.metadata.step === 'BUDGET')?.metadata.answer;
+            const explicitBedrooms = chatChoices.find(i => i.metadata.step === 'BEDROOMS')?.metadata.answer;
+
+            // Extract property details from viewing interactions
             const propertyIds = lead.interactions
                 .filter(i => i.metadata && i.metadata.propertyId)
                 .map(i => i.metadata.propertyId);
 
-            if (propertyIds.length === 0) return null;
-
-            const properties = await prisma.property.findMany({
+            const viewedProperties = propertyIds.length > 0 ? await prisma.property.findMany({
                 where: { id: { in: propertyIds } },
                 include: {
                     units: {
                         include: { unitPricing: true }
                     }
                 }
-            });
+            }) : [];
 
-            // Calculate preferences
-            const locations = [...new Set(properties.map(p => p.city).filter(Boolean))];
-            const propertyTypes = [...new Set(properties.map(p => p.propertyType).filter(Boolean))];
+            // Interpret Preferences
+            const locations = [
+                ...new Set([
+                    ...explicitLocations,
+                    ...viewedProperties.map(p => p.city)
+                ])
+            ].filter(Boolean);
 
-            // Handle average budget from viewed properties if not explicitly set
-            const prices = properties.flatMap(p =>
-                p.units.flatMap(u =>
-                    u.unitPricing.map(up => Number(up.price))
-                )
-            ).filter(p => p > 0);
-            const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
+            const typeMap = {
+                'Apartment': 1,
+                'Villa': 1,
+                'Residential': 1,
+                'Office': 2,
+                'Commercial': 2,
+                'Industrial': 3,
+                'Studio': 1
+            };
+
+            const propertyTypes = [
+                ...new Set([
+                    ...explicitTypes.map(t => typeof typeMap[t] !== 'undefined' ? typeMap[t] : Number(t)),
+                    ...viewedProperties.map(p => p.propertyType)
+                ])
+            ].filter(v => v !== null && v !== undefined && !isNaN(Number(v))).map(Number);
+
+            // Handle budget
+            let suggestedBudget = null;
+            if (explicitBudgetRaw) {
+                const b = Array.isArray(explicitBudgetRaw) ? explicitBudgetRaw[0] : explicitBudgetRaw;
+                if (b.includes('10k')) suggestedBudget = 15000;
+                else if (b.includes('5k')) suggestedBudget = 8000;
+                else if (b.includes('1k')) suggestedBudget = 3000;
+                else suggestedBudget = 1000;
+            } else {
+                const prices = viewedProperties.flatMap(p =>
+                    p.units.flatMap(u =>
+                        u.unitPricing.map(up => Number(up.price))
+                    )
+                ).filter(p => p > 0);
+                suggestedBudget = prices.length > 0 ? (prices.reduce((a, b) => a + b, 0) / prices.length) * 1.2 : null;
+            }
 
             const currentPrefs = typeof lead.preferences === 'string' ? JSON.parse(lead.preferences) : (lead.preferences || {});
 
@@ -55,7 +90,8 @@ class PropertyMatchService {
                 ...currentPrefs,
                 interpretedLocations: locations,
                 interpretedTypes: propertyTypes,
-                suggestedMaxBudget: avgPrice ? avgPrice * 1.2 : currentPrefs.suggestedMaxBudget,
+                suggestedMaxBudget: suggestedBudget || currentPrefs.suggestedMaxBudget,
+                explicitBedrooms: explicitBedrooms || currentPrefs.explicitBedrooms,
                 lastProcessedAt: new Date()
             };
 
@@ -94,8 +130,8 @@ class PropertyMatchService {
                     AND: [
                         hasPrefs ? {
                             OR: [
-                                { city: { in: prefs.interpretedLocations || [] } },
-                                { propertyType: { in: prefs.interpretedTypes || [] } }
+                                { city: { in: (prefs.interpretedLocations || []).map(String) } },
+                                { propertyType: { in: (prefs.interpretedTypes || []).map(Number).filter(n => !isNaN(n)) } }
                             ]
                         } : {},
                         {
@@ -140,8 +176,15 @@ class PropertyMatchService {
                 // Baseline score for matched properties
                 matchScore += 10;
 
-                if (prefs.interpretedLocations?.includes(p.city)) matchScore += 40;
-                if (prefs.interpretedTypes?.includes(p.propertyType)) matchScore += 30;
+                if (prefs.interpretedLocations?.map(String).includes(String(p.city))) matchScore += 30;
+                if (prefs.interpretedTypes?.map(Number).includes(Number(p.propertyType))) matchScore += 20;
+
+                // Explicit bedroom match (High Priority)
+                if (prefs.explicitBedrooms) {
+                    const reqBeds = parseInt(prefs.explicitBedrooms);
+                    if (p.bedrooms === reqBeds) matchScore += 30;
+                    else if (Math.abs((p.bedrooms || 0) - reqBeds) <= 1) matchScore += 10;
+                }
 
                 // Budget fit scoring
                 const minUnitPrice = unitsWithPrice.length > 0
@@ -149,7 +192,9 @@ class PropertyMatchService {
                     : 0;
 
                 if (minUnitPrice > 0 && minUnitPrice <= budget) {
-                    matchScore += 20;
+                    matchScore += 10;
+                    // Extra points for closeness to budget
+                    if (minUnitPrice >= budget * 0.7) matchScore += 10;
                 }
 
                 return {

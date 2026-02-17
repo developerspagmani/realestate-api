@@ -24,7 +24,6 @@ const publicController = {
                         select: { units: true }
                     },
                     units: {
-                        where: { status: 1 },
                         include: {
                             unitPricing: true,
                             mainImage: true
@@ -60,11 +59,19 @@ const publicController = {
                         where: { status: 1 }
                     },
                     units: {
-                        where: { status: 1 },
                         include: {
                             unitPricing: true,
+                            realEstateDetails: true,
+                            unitAmenities: {
+                                include: { amenity: true }
+                            },
                             mainImage: true
                         }
+                    },
+                    floorPlan: true,
+                    brochure: true,
+                    propertyAmenities: {
+                        include: { amenity: true }
                     }
                 }
             });
@@ -73,18 +80,40 @@ const publicController = {
                 return res.status(404).json({ success: false, message: 'Property not found' });
             }
 
-            // Resolve gallery media if they are IDs
+            // Resolve gallery media if they are IDs for property and units
+            const allMediaIds = new Set();
             if (property.gallery && Array.isArray(property.gallery)) {
-                const mediaIds = property.gallery.filter(item => typeof item === 'string');
-                if (mediaIds.length > 0) {
-                    const resolvedMedia = await prisma.media.findMany({
-                        where: { id: { in: mediaIds } }
-                    });
+                property.gallery.forEach(item => { if (typeof item === 'string') allMediaIds.add(item); });
+            }
+            if (property.units && Array.isArray(property.units)) {
+                property.units.forEach(u => {
+                    if (u.gallery && Array.isArray(u.gallery)) {
+                        u.gallery.forEach(item => { if (typeof item === 'string') allMediaIds.add(item); });
+                    }
+                });
+            }
+
+            if (allMediaIds.size > 0) {
+                const resolvedMedia = await prisma.media.findMany({
+                    where: { id: { in: Array.from(allMediaIds) } }
+                });
+
+                // Map back to property
+                if (property.gallery && Array.isArray(property.gallery)) {
                     property.gallery = property.gallery.map(item => {
-                        if (typeof item === 'string') {
-                            return resolvedMedia.find(m => m.id === item) || item;
-                        }
+                        if (typeof item === 'string') return resolvedMedia.find(m => m.id === item) || item;
                         return item;
+                    });
+                }
+                // Map back to units
+                if (property.units && Array.isArray(property.units)) {
+                    property.units.forEach(u => {
+                        if (u.gallery && Array.isArray(u.gallery)) {
+                            u.gallery = u.gallery.map(item => {
+                                if (typeof item === 'string') return resolvedMedia.find(m => m.id === item) || item;
+                                return item;
+                            });
+                        }
                     });
                 }
             }
@@ -122,7 +151,6 @@ const publicController = {
             }
 
             const where = {
-                status: 1, // Available
                 ...(resolvedPropertyId ? { propertyId: resolvedPropertyId } : {}),
                 ...(tenantId ? { tenantId } : {}),
                 ...(unitCategory ? { unitCategory: parseInt(unitCategory) } : {})
@@ -132,8 +160,11 @@ const publicController = {
                 where,
                 include: {
                     unitPricing: true,
-                    coworkingDetails: true,
+                    realEstateDetails: true,
                     mainImage: true,
+                    unitAmenities: {
+                        include: { amenity: true }
+                    },
                     property: {
                         select: {
                             id: true,
@@ -144,6 +175,29 @@ const publicController = {
                     }
                 }
             });
+
+            // Resolve gallery media if they are IDs
+            const allMediaIds = new Set();
+            units.forEach(u => {
+                if (u.gallery && Array.isArray(u.gallery)) {
+                    u.gallery.forEach(item => { if (typeof item === 'string') allMediaIds.add(item); });
+                }
+            });
+
+            if (allMediaIds.size > 0) {
+                const resolvedMedia = await prisma.media.findMany({
+                    where: { id: { in: Array.from(allMediaIds) } }
+                });
+
+                units.forEach(u => {
+                    if (u.gallery && Array.isArray(u.gallery)) {
+                        u.gallery = u.gallery.map(item => {
+                            if (typeof item === 'string') return resolvedMedia.find(m => m.id === item) || item;
+                            return item;
+                        });
+                    }
+                });
+            }
 
             res.json({ success: true, data: units });
         } catch (error) {
@@ -159,7 +213,7 @@ const publicController = {
 
             // Check if id is UUID or slug
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-            const where = isUuid ? { id, status: 1 } : { slug: id, status: 1 };
+            const where = isUuid ? { id } : { slug: id };
 
             const unit = await prisma.unit.findFirst({
                 where,

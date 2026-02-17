@@ -1,6 +1,8 @@
 const { prisma } = require('../config/database');
 const { assignLeadRoundRobin } = require('./agentController');
 const { sendLeadEmail } = require('../utils/emailService');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 // Get all leads (Admin/Owner only)
 const getAllLeads = async (req, res) => {
@@ -316,12 +318,12 @@ const createLead = async (req, res) => {
         phone,
         company,
         message,
-        source: parseInt(source) || 1,
+        source: (source && (isNaN(parseInt(source)) ? { 'website': 1, 'email': 2, 'phone': 3, 'social': 4, 'referral': 5, 'other': 6, 'chatbot': 7 }[source.toLowerCase()] : parseInt(source))) || 1,
         priority: parseInt(priority) || 2,
         unitId,
         budget: budget ? parseFloat(budget) : null,
         preferredDate: preferredDate ? new Date(preferredDate) : null,
-        status: status ? parseInt(status) : 1, // 1 = NEW
+        status: (status && (isNaN(parseInt(status)) ? { 'new': 1, 'contacted': 2, 'qualified': 3, 'converted': 4, 'lost': 5 }[status.toLowerCase()] : parseInt(status))) || 1,
         userId: req.user?.id || null,
         notes: notes || null,
         // agentId removed
@@ -662,7 +664,10 @@ const updateLead = async (req, res) => {
       budget,
       preferredDate,
       notes,
-      agentId // Allow updating agent
+      agentId, // Allow updating agent
+      preferences,
+      isConvertedToUser,
+      userCreationData
     } = req.body;
 
     const isAdmin = req.user.role === 2;
@@ -685,11 +690,12 @@ const updateLead = async (req, res) => {
       budget: budget ? parseFloat(budget) : undefined,
       preferredDate: preferredDate ? new Date(preferredDate) : undefined,
       notes,
+      preferences,
       updatedAt: new Date()
     };
 
-    if (source) data.source = parseInt(source);
-    if (status) data.status = parseInt(status);
+    if (source) data.source = isNaN(parseInt(source)) ? { 'website': 1, 'email': 2, 'phone': 3, 'social': 4, 'referral': 5, 'other': 6, 'chatbot': 7 }[source.toLowerCase()] : parseInt(source);
+    if (status) data.status = isNaN(parseInt(status)) ? { 'new': 1, 'contacted': 2, 'qualified': 3, 'converted': 4, 'lost': 5 }[status.toLowerCase()] : parseInt(status);
     if (priority) data.priority = parseInt(priority);
     if (unitId) data.unitId = unitId;
 
@@ -734,6 +740,53 @@ const updateLead = async (req, res) => {
           message: 'Unit not found'
         });
       }
+    }
+
+    const existingLead = await prisma.lead.findUnique({
+      where: { id, tenantId }
+    });
+
+    if (!existingLead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+
+    // Handle Lead to User Conversion
+    if (isConvertedToUser && !existingLead.userId) {
+      const email = existingLead.email;
+      if (!email) {
+        return res.status(400).json({ success: false, message: 'Lead must have an email address to be converted to a user.' });
+      }
+
+      // Check if user already exists
+      let user = await prisma.user.findUnique({ where: { email } });
+
+      if (!user) {
+        // Create new user
+        const tempPassword = userCreationData?.password || crypto.randomBytes(8).toString('hex');
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+        user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash: hashedPassword,
+            name: existingLead.name,
+            phone: existingLead.phone,
+            tenantId,
+            role: parseInt(userCreationData?.role) || 1, // Default to Customer/User
+            status: 1 // Active
+          }
+        });
+      } else {
+        // User exists, check if they belong to the same tenant or are available to be linked
+        if (user.tenantId && user.tenantId !== tenantId) {
+          return res.status(400).json({ success: false, message: 'A user with this email already exists in another tenant.' });
+        }
+      }
+
+      // Link user to lead
+      data.userId = user.id;
+      data.status = 4; // Force "Converted" status
     }
 
     const lead = await prisma.lead.update({

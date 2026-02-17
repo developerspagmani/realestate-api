@@ -61,6 +61,8 @@ model Tenant {
   leadInteractions  LeadInteraction[]
   websites          Website[]
   pages             Page[]
+  upgradeRequests   PlanUpgradeRequest[]
+  integrations      Integration[]
 
   @@map("tenants")
 }
@@ -88,9 +90,10 @@ model Plan {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  tenants     Tenant[]
-  licenseKeys LicenseKey[]
-  modules     Module[]
+  tenants         Tenant[]
+  licenseKeys     LicenseKey[]
+  modules         Module[]
+  upgradeRequests PlanUpgradeRequest[]
 
   @@map("plans")
 }
@@ -150,6 +153,7 @@ model User {
   payments     Payment[]
   agent        Agent?
   licenseKeys  LicenseKey[]
+  planUpgradeRequests PlanUpgradeRequest[]
 
   @@index([tenantId])
   @@index([phone])
@@ -588,6 +592,28 @@ model TenantModule {
   @@map("tenant_modules")
 }
 
+model Integration {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  platform    String   @default("wordpress") // e.g., "wordpress", "shopify"
+  siteUrl     String   @map("site_url")     // The URL of the client's WP site
+  siteName    String?  @map("site_name")
+  
+  apiKey      String   @unique @map("api_key") // The unique key generated during connection
+  environment String   @default("production")  // production, development, staging
+  isSandbox   Boolean  @default(false)        @map("is_sandbox")
+  
+  status      Boolean  @default(true)
+  lastSyncAt  DateTime? @map("last_sync_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("integrations")
+}
+
 model Widget {
   id            String   @id @default(uuid()) @db.Uuid
   uniqueId      String   @unique @map("unique_id") // Human readable unique ID
@@ -896,4 +922,25 @@ model BlacklistedToken {
 
   @@index([token])
   @@map("blacklisted_tokens")
+}
+
+model PlanUpgradeRequest {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @db.Uuid @map("tenant_id")
+  ownerId         String   @db.Uuid @map("owner_id")
+  currentPlanId   String?  @db.Uuid @map("current_plan_id")
+  requestedPlanId String   @db.Uuid @map("requested_plan_id")
+  status          Int      @default(1) // 1: Pending, 2: Approved, 3: Rejected
+  email           String
+  message         String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  requestedPlan   Plan     @relation(fields: [requestedPlanId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([ownerId])
+  @@map("plan_upgrade_requests")
 }

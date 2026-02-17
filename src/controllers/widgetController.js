@@ -358,7 +358,12 @@ const widgetController = {
                         leadId: lead.id,
                         tenantId: widget.tenantId,
                         type: interactionType,
-                        notes: `Inquiry from ${source === 'widget_chatbot' ? 'Chatbot' : 'Widget'}.`,
+                        metadata: {
+                            notes: `Inquiry from ${source === 'widget_chatbot' ? 'Chatbot' : 'Widget'}.`,
+                            propertyId: propertyId || lead.propertyId,
+                            unitId: unitId || null,
+                            widgetId: widget.id
+                        },
                         scoreWeight: scoreWeight
                     }
                 });

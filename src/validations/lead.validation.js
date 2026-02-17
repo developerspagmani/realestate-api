@@ -41,6 +41,12 @@ module.exports = {
         preferredDate: Joi.date().optional().allow(null),
         notes: Joi.string().max(1000).optional().allow('', null),
         agentId: Joi.string().uuid().optional().allow('', null),
+        preferences: Joi.object().optional(),
+        isConvertedToUser: Joi.boolean().optional(),
+        userCreationData: Joi.object({
+            role: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional(),
+            password: Joi.string().optional().allow('', null)
+        }).optional()
     }),
 
     assignLead: Joi.object({

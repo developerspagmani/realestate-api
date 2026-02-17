@@ -5,9 +5,12 @@ const SCORING_RULES = {
     'EMAIL_OPEN': 1,
     'EMAIL_CLICK': 3,
     'PROPERTY_VIEW': 5,
+    'UNIT_VIEW': 5,
     'FORM_SUBMIT': 20,
     'CHAT_INIT': 10,
+    'CHAT_CHOICE': 5,
     'BOOKING_REQUEST': 30,
+    'UNIT_BOOKING_START': 5,
     'WEBSITE_INQUIRY': 20
 };
 
