@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
 require('dotenv').config();
 // Restart trigger - forced update
 
@@ -41,10 +42,15 @@ const categoryRoutes = require('./routes/categories');
 const planRoutes = require('./routes/plans');
 const licenseKeyRoutes = require('./routes/licenseKeys');
 const cmsRoutes = require('./routes/cmsRoutes');
+const upgradeRequestsRoutes = require('./routes/upgradeRequests');
+const integrationRoutes = require('./routes/integrations');
+const socialRoutes = require('./routes/social');
+
 
 
 
 const errorHandler = require('./middleware/errorHandler');
+const ScheduledPostsService = require('./services/social/scheduledPostsService');
 
 const app = express();
 
@@ -68,8 +74,8 @@ app.use(helmet());
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  'https://app.virpanix.com',
-  'https://realestate-api-seven.vercel.app',
+  "http://localhost:3000",
+  "http://localhost:3001"
 ].filter(Boolean);
 
 app.use(cors({
@@ -136,6 +142,10 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/license-keys', licenseKeyRoutes);
 app.use('/api/cms', cmsRoutes);
+app.use('/api/upgrade-requests', upgradeRequestsRoutes);
+app.use('/api/integrations', integrationRoutes);
+app.use('/api/social', socialRoutes);
+
 
 
 
@@ -168,6 +178,18 @@ process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await disconnectDB();
   process.exit(0);
+});
+
+// Initialize background workers
+const scheduledPostsService = new ScheduledPostsService();
+
+// Run every minute
+cron.schedule('* * * * *', async () => {
+  try {
+    await scheduledPostsService.publishScheduledPosts();
+  } catch (error) {
+    console.error('Error in scheduled posts cron:', error);
+  }
 });
 
 // Start server with database connection

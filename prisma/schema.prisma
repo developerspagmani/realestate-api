@@ -64,6 +64,15 @@ model Tenant {
   upgradeRequests   PlanUpgradeRequest[]
   integrations      Integration[]
 
+  // Social Media Module
+  connectedAccounts ConnectedAccount[]
+  scheduledPosts    ScheduledPost[]
+  publishedPosts    PublishedPost[]
+  whatsappTemplates WhatsAppTemplate[]
+  whatsappCampaigns WhatsAppCampaign[]
+  whatsappMessages  WhatsAppMessage[]
+
+
   @@map("tenants")
 }
 
@@ -155,6 +164,13 @@ model User {
   licenseKeys  LicenseKey[]
   planUpgradeRequests PlanUpgradeRequest[]
 
+  // Social Media Module
+  connectedAccounts ConnectedAccount[]
+  scheduledPosts    ScheduledPost[]
+  publishedPosts    PublishedPost[]
+  whatsappCampaigns WhatsAppCampaign[]
+
+
   @@index([tenantId])
   @@index([phone])
   @@map("users")
@@ -212,6 +228,10 @@ model Property {
   agentProperties AgentProperty[]
   metadata        Json?    @default("{}")
   websites        Website[]
+
+  // Social Media Module
+  scheduledPosts  ScheduledPost[]
+
 
   @@index([tenantId])
   @@index([categoryId])
@@ -943,4 +963,189 @@ model PlanUpgradeRequest {
   @@index([tenantId])
   @@index([ownerId])
   @@map("plan_upgrade_requests")
+}
+
+// ============================================
+// SOCIAL MEDIA MODULE
+// ============================================
+
+// Connected social media accounts (OAuth)
+model ConnectedAccount {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @db.Uuid @map("tenant_id")
+  userId       String         @db.Uuid @map("user_id")
+  platform     SocialPlatform
+  accountId    String         @map("account_id") // Platform-specific account ID
+  accountName  String         @map("account_name")
+  accessToken  String         @db.Text @map("access_token")
+  refreshToken String?        @db.Text @map("refresh_token")
+  tokenExpiry  DateTime?      @map("token_expiry")
+  isActive     Boolean        @default(true) @map("is_active")
+  metadata     Json?          @default("{}") // Platform-specific data
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("connected_accounts")
+}
+
+// Scheduled social media posts
+model ScheduledPost {
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @db.Uuid @map("tenant_id")
+  userId           String           @db.Uuid @map("user_id")
+  propertyId       String?          @db.Uuid @map("property_id") // Link to property
+  title            String
+  description      String?          @db.Text
+  hashtags         String?
+  platforms        SocialPlatform[] // Array of platforms
+  scheduledDate    DateTime         @map("scheduled_date")
+  scheduledTime    String           @map("scheduled_time") // HH:MM format
+  status           PostStatus       @default(DRAFT)
+  isVideo          Boolean          @default(false) @map("is_video")
+  isCarousel       Boolean          @default(false) @map("is_carousel")
+  mediaUrls        String[]         @map("media_urls")
+  imageData        Json?            @map("image_data")
+  videoData        Json?            @map("video_data")
+  executionResults Json?            @map("execution_results")
+  lastPostedAt     DateTime?        @map("last_posted_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property       Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  publishedPosts PublishedPost[]
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("scheduled_posts")
+}
+
+// Published posts tracking
+model PublishedPost {
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @db.Uuid @map("tenant_id")
+  userId          String         @db.Uuid @map("user_id")
+  scheduledPostId String         @db.Uuid @map("scheduled_post_id")
+  platform        SocialPlatform
+  platformPostId  String         @map("platform_post_id") // ID from social platform
+  postUrl         String         @map("post_url")
+  caption         String?        @db.Text
+  mediaUrls       String[]       @map("media_urls")
+  hashtags        String?
+  status          String         @default("published")
+  metrics         Json? // Likes, comments, shares, reach
+  publishedAt     DateTime       @default(now()) @map("published_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, platformPostId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([scheduledPostId])
+  @@map("published_posts")
+}
+
+// WhatsApp templates
+model WhatsAppTemplate {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid @map("tenant_id")
+  wabaId     String   @map("waba_id")
+  name       String
+  category   String
+  language   String
+  status     String   @default("PENDING")
+  components Json // Hero, Body, Footer, Buttons
+  variables  String[] // List of variables in the template
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, wabaId, name, language])
+  @@index([tenantId])
+  @@map("whatsapp_templates")
+}
+
+// WhatsApp campaigns
+model WhatsAppCampaign {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @db.Uuid @map("tenant_id")
+  userId         String    @db.Uuid @map("user_id")
+  wabaId         String    @map("waba_id")
+  phoneNumberId  String    @map("phone_number_id")
+  templateName   String    @map("template_name")
+  name           String
+  status         String    @default("SCHEDULED")
+  scheduledAt    DateTime? @map("scheduled_at")
+  sentCount      Int       @default(0) @map("sent_count")
+  deliveredCount Int       @default(0) @map("delivered_count")
+  readCount      Int       @default(0) @map("read_count")
+  failedCount    Int       @default(0) @map("failed_count")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages WhatsAppMessage[]
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("whatsapp_campaigns")
+}
+
+// WhatsApp messages log
+model WhatsAppMessage {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String?   @db.Uuid @map("tenant_id")
+  businessId    String?   @map("business_id")
+  campaignId    String?   @db.Uuid @map("campaign_id")
+  senderNumber  String    @map("sender_number")
+  messageText   String?   @db.Text @map("message_text")
+  direction     String    @map("direction") // INBOUND, OUTBOUND
+  metaMessageId String?   @unique @map("meta_message_id")
+  status        String    @default("sent")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant?           @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  campaign WhatsAppCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@index([metaMessageId])
+  @@index([campaignId])
+  @@map("whatsapp_messages")
+}
+
+// Enums for Social Media
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  GOOGLE
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  WHATSAPP
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  POSTED
+  FAILED
+  CANCELLED
 }
