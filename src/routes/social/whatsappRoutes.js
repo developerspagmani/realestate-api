@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const whatsappController = require('../../controllers/social/whatsappController');
 
+const { auth } = require('../../middleware/auth');
+
+// Apply authentication to management routes
+router.use((req, res, next) => {
+    // Exclude webhook routes from authentication
+    if (req.path === '/webhook') {
+        return next();
+    }
+    auth(req, res, next);
+});
+
 // Templates
 router.get('/templates', whatsappController.getTemplates);
 router.post('/templates', whatsappController.createTemplate);
@@ -18,6 +29,10 @@ router.get('/campaigns/:id/stats', whatsappController.getCampaignStats);
 // Messages
 router.get('/messages', whatsappController.getMessages);
 router.post('/messages', whatsappController.sendMessage);
+
+// Meta Info (Account details)
+router.get('/business/:wabaId', whatsappController.getBusinessInfo);
+router.get('/phone/:phoneId', whatsappController.getPhoneInfo);
 
 // Webhook (no authentication required for webhook endpoints)
 router.get('/webhook', whatsappController.verifyWebhook);

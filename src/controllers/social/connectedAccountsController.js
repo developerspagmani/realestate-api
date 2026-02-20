@@ -11,7 +11,7 @@ const connectAccount = async (req, res) => {
     try {
         const { platform, accessToken, refreshToken, accountId, accountName, metadata } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         // Validate required fields
         if (!platform || !accessToken || !accountId || !accountName) {
@@ -57,7 +57,7 @@ const connectAccount = async (req, res) => {
 const getConnectedAccounts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { platform, isActive } = req.query;
 
         const where = { userId, tenantId };
@@ -96,7 +96,7 @@ const getConnectedAccountById = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const account = await prisma.connectedAccount.findFirst({
             where: { id, userId, tenantId }
@@ -130,7 +130,7 @@ const disconnectAccount = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         // Check if account exists and belongs to user
         const account = await prisma.connectedAccount.findFirst({
@@ -170,7 +170,7 @@ const updateAccountTokens = async (req, res) => {
         const { id } = req.params;
         const { accessToken, refreshToken, tokenExpiry } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         if (!accessToken) {
             return res.status(400).json({
@@ -223,7 +223,7 @@ const refreshAccountToken = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const account = await connectedAccountsService.refreshAccountToken(id, userId, tenantId);
 
@@ -249,7 +249,7 @@ const getAccountByPlatform = async (req, res) => {
     try {
         const { platform } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const account = await prisma.connectedAccount.findFirst({
             where: {
@@ -287,7 +287,7 @@ const getAccountByPlatform = async (req, res) => {
 const getConnectionStats = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const [total, active, byPlatform] = await Promise.all([
             prisma.connectedAccount.count({ where: { userId, tenantId } }),
@@ -330,7 +330,7 @@ const exchangeMetaCode = async (req, res) => {
     try {
         const { code, redirectUri } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         if (!code) {
             return res.status(400).json({
@@ -363,7 +363,7 @@ const exchangeGoogleCode = async (req, res) => {
     try {
         const { code, redirectUri } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         if (!code) {
             return res.status(400).json({

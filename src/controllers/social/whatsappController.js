@@ -16,7 +16,7 @@ const getWhatsAppAccount = async (tenantId) => {
  */
 const syncTemplates = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const account = await getWhatsAppAccount(tenantId);
 
         if (!account || !account.accessToken || !account.accountId) {
@@ -59,7 +59,7 @@ const syncTemplates = async (req, res) => {
  */
 const getTemplates = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const templates = await prisma.whatsAppTemplate.findMany({
             where: { tenantId },
@@ -85,7 +85,7 @@ const getTemplates = async (req, res) => {
  */
 const createTemplate = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { wabaId, name, category, language, components, variables } = req.body;
 
         const account = await getWhatsAppAccount(tenantId);
@@ -150,7 +150,7 @@ const createTemplate = async (req, res) => {
 const getTemplateById = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const template = await prisma.whatsAppTemplate.findFirst({
             where: { id, tenantId }
@@ -183,7 +183,7 @@ const getTemplateById = async (req, res) => {
 const deleteTemplate = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const template = await prisma.whatsAppTemplate.findFirst({
             where: { id, tenantId }
@@ -226,7 +226,7 @@ const deleteTemplate = async (req, res) => {
  */
 const getCampaigns = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const userId = req.user.id;
 
         const campaigns = await prisma.whatsAppCampaign.findMany({
@@ -253,7 +253,7 @@ const getCampaigns = async (req, res) => {
  */
 const createCampaign = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const userId = req.user.id;
         const { wabaId, phoneNumberId, templateName, name, scheduledAt, recipients } = req.body;
 
@@ -314,7 +314,7 @@ const createCampaign = async (req, res) => {
 const getCampaignById = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const userId = req.user.id;
 
         const campaign = await prisma.whatsAppCampaign.findFirst({
@@ -348,7 +348,7 @@ const getCampaignById = async (req, res) => {
 const getCampaignStats = async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const userId = req.user.id;
 
         const campaign = await prisma.whatsAppCampaign.findFirst({
@@ -394,7 +394,7 @@ const getCampaignStats = async (req, res) => {
  */
 const getMessages = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { page = 1, limit = 50, direction } = req.query;
 
         const where = { tenantId };
@@ -438,26 +438,36 @@ const getMessages = async (req, res) => {
  */
 const sendMessage = async (req, res) => {
     try {
-        const tenantId = req.tenant.id;
-        const { phoneNumberId, to, templateName, components } = req.body;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const { phoneNumberId, to, templateName, components, text } = req.body;
 
-        if (!phoneNumberId || !to || !templateName) {
+        if (!phoneNumberId || !to || (!templateName && !text)) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required fields'
+                message: 'Missing required fields: to, phoneNumberId and (templateName or text)'
             });
         }
 
         const account = await getWhatsAppAccount(tenantId);
         const accessToken = account?.accessToken;
 
-        const result = await whatsappService.sendMessage({
-            phoneNumberId,
-            to,
-            templateName,
-            components,
-            accessToken
-        });
+        let result;
+        if (templateName) {
+            result = await whatsappService.sendMessage({
+                phoneNumberId,
+                to,
+                templateName,
+                components,
+                accessToken
+            });
+        } else {
+            result = await whatsappService.sendTextMessage({
+                phoneNumberId,
+                to,
+                text,
+                accessToken
+            });
+        }
 
         if (!result.success) {
             return res.status(400).json({
@@ -471,7 +481,7 @@ const sendMessage = async (req, res) => {
             data: {
                 tenantId,
                 senderNumber: to,
-                messageText: templateName,
+                messageText: templateName || text,
                 direction: 'OUTBOUND',
                 metaMessageId: result.messageId,
                 status: 'sent'
@@ -509,24 +519,25 @@ const handleWebhook = async (req, res) => {
         }
 
         const value = changes[0].value;
+        const metadata = value.metadata;
 
         // Handle message status updates
         if (value.statuses) {
             for (const status of value.statuses) {
-                await whatsappService.handleMessageStatus(status);
+                await whatsappService.handleMessageStatus(status).catch(err => console.error('Status error:', err));
             }
         }
 
         // Handle incoming messages
         if (value.messages) {
             for (const message of value.messages) {
-                await whatsappService.handleIncomingMessage(message);
+                await whatsappService.handleIncomingMessage(message, metadata).catch(err => console.error('Message error:', err));
             }
         }
 
         res.status(200).send('OK');
     } catch (error) {
-        console.error('Webhook error:', error);
+        console.error('Webhook processing error:', error);
         res.status(200).send('OK'); // Always return 200 to Meta
     }
 };
@@ -550,6 +561,50 @@ const verifyWebhook = (req, res) => {
     }
 };
 
+/**
+ * Get WhatsApp Business Account Info from Meta
+ */
+const getBusinessInfo = async (req, res) => {
+    try {
+        const { wabaId } = req.params;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const account = await getWhatsAppAccount(tenantId);
+        const accessToken = account?.accessToken;
+
+        const result = await whatsappService.getBusinessAccountInfo(wabaId, accessToken);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Get business info error:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching business info' });
+    }
+};
+
+/**
+ * Get Phone Number Info from Meta
+ */
+const getPhoneInfo = async (req, res) => {
+    try {
+        const { phoneId } = req.params;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const account = await getWhatsAppAccount(tenantId);
+        const accessToken = account?.accessToken;
+
+        const result = await whatsappService.getPhoneNumberInfo(phoneId, accessToken);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Get phone info error:', error);
+        res.status(500).json({ success: false, message: 'Server error fetching phone info' });
+    }
+};
+
 module.exports = {
     syncTemplates,
     getTemplates,
@@ -563,5 +618,7 @@ module.exports = {
     getMessages,
     sendMessage,
     handleWebhook,
-    verifyWebhook
+    verifyWebhook,
+    getBusinessInfo,
+    getPhoneInfo
 };

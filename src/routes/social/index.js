@@ -8,12 +8,14 @@ const publishedPostsRoutes = require('./publishedPostsRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
 const whatsappRoutes = require('./whatsappRoutes');
 
+const { auth } = require('../../middleware/auth');
+
 // Mount routes
-router.use('/accounts', connectedAccountsRoutes);
-router.use('/posts/scheduled', scheduledPostsRoutes);
-router.use('/posts/published', publishedPostsRoutes);
-router.use('/analytics', analyticsRoutes);
-router.use('/whatsapp', whatsappRoutes);
+router.use('/accounts', auth, connectedAccountsRoutes);
+router.use('/posts/scheduled', auth, scheduledPostsRoutes);
+router.use('/posts/published', auth, publishedPostsRoutes);
+router.use('/analytics', auth, analyticsRoutes);
+router.use('/whatsapp', whatsappRoutes); // Auth handled within whatsappRoutes to exclude webhooks
 
 
 
