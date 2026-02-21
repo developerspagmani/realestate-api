@@ -125,17 +125,24 @@ class ScheduledPostsService {
         // Prepare the post data
         const postData = {
             message: `${post.title}\n\n${post.description || ''}\n\n${post.hashtags || ''}`.trim(),
-            access_token: pageAccessToken
+            access_token: pageAccessToken,
+            published: true // Explicitly set to true to ensure it's not a dark post
         };
+
+        // If it's a personal profile (not recommended but handled), add privacy
+        // For Page posts, this will be ignored by Facebook but doesn't hurt
+        postData.privacy = JSON.stringify({ value: 'EVERYONE' });
 
         // Add media if available
         if (post.mediaUrls && post.mediaUrls.length > 0) {
             if (post.isVideo) {
                 // Video post
-                postData.file_url = post.mediaUrls[0];
                 const response = await axios.post(
                     `https://graph.facebook.com/v18.0/${page.id}/videos`,
-                    postData
+                    {
+                        ...postData,
+                        file_url: post.mediaUrls[0]
+                    }
                 );
                 return {
                     postId: response.data.id,
@@ -143,10 +150,12 @@ class ScheduledPostsService {
                 };
             } else if (post.mediaUrls.length === 1) {
                 // Single image post
-                postData.url = post.mediaUrls[0];
                 const response = await axios.post(
                     `https://graph.facebook.com/v18.0/${page.id}/photos`,
-                    postData
+                    {
+                        ...postData,
+                        url: post.mediaUrls[0]
+                    }
                 );
                 return {
                     postId: response.data.id,
@@ -174,7 +183,8 @@ class ScheduledPostsService {
                     {
                         message: postData.message,
                         attached_media: attachedMedia,
-                        access_token: pageAccessToken
+                        access_token: pageAccessToken,
+                        published: true
                     }
                 );
 

@@ -9,7 +9,7 @@ const scheduledPostsService = new ScheduledPostsService();
 const getPublishedPosts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { platform, propertyId, page = 1, limit = 20 } = req.query;
 
         const where = { tenantId, userId };
@@ -72,7 +72,7 @@ const getPublishedPostById = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const post = await prisma.publishedPost.findFirst({
             where: { id, userId, tenantId },
@@ -117,7 +117,7 @@ const updateMetrics = async (req, res) => {
         const { id } = req.params;
         const { metrics } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const post = await prisma.publishedPost.findFirst({
             where: { id, userId, tenantId }
@@ -159,7 +159,7 @@ const updateMetrics = async (req, res) => {
 const getPublishedStats = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const [total, byPlatform, recent] = await Promise.all([
             prisma.publishedPost.count({ where: { userId, tenantId } }),
@@ -210,7 +210,7 @@ const deletePublishedPost = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const post = await prisma.publishedPost.findFirst({
             where: { id, userId, tenantId }
@@ -248,7 +248,7 @@ const getPublishedPostsByProperty = async (req, res) => {
     try {
         const { propertyId } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const posts = await prisma.publishedPost.findMany({
             where: {
@@ -289,7 +289,7 @@ const refreshPostMetrics = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         // Get the published post with connected account
         const post = await prisma.publishedPost.findFirst({

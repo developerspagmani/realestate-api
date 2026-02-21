@@ -7,7 +7,7 @@ const { prisma } = require('../../config/database');
 const getOverview = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { startDate, endDate } = req.query;
 
         const where = { tenantId, userId };
@@ -85,7 +85,7 @@ const getOverview = async (req, res) => {
 const getPlatformAnalytics = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const [publishedByPlatform, accountsByPlatform] = await Promise.all([
             prisma.publishedPost.groupBy({
@@ -145,7 +145,7 @@ const getPlatformAnalytics = async (req, res) => {
 const getPostingTrends = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { days = 30 } = req.query;
 
         const startDate = new Date();
@@ -200,7 +200,7 @@ const getPostingTrends = async (req, res) => {
 const getPropertyAnalytics = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const postsWithProperties = await prisma.scheduledPost.findMany({
             where: {
@@ -263,7 +263,7 @@ const getPropertyAnalytics = async (req, res) => {
 const getEngagementMetrics = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const publishedPosts = await prisma.publishedPost.findMany({
             where: { tenantId, userId },

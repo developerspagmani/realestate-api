@@ -7,9 +7,12 @@ const { auth } = require('../../middleware/auth');
 // Apply authentication to management routes
 router.use((req, res, next) => {
     // Exclude webhook routes from authentication
-    if (req.path === '/webhook') {
+    // Convert to string and handle potential trailing slashes
+    const path = req.path.toLowerCase();
+    if (path === '/webhook' || path === '/webhook/') {
         return next();
     }
+
     auth(req, res, next);
 });
 
@@ -24,6 +27,8 @@ router.delete('/templates/:id', whatsappController.deleteTemplate);
 router.get('/campaigns', whatsappController.getCampaigns);
 router.post('/campaigns', whatsappController.createCampaign);
 router.get('/campaigns/:id', whatsappController.getCampaignById);
+router.patch('/campaigns/:id', whatsappController.updateCampaign);
+router.delete('/campaigns/:id', whatsappController.deleteCampaign);
 router.get('/campaigns/:id/stats', whatsappController.getCampaignStats);
 
 // Messages

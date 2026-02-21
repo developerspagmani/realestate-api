@@ -23,7 +23,8 @@ module.exports = {
             bathrooms: Joi.number().integer().min(0).optional().allow(null),
             furnishing: Joi.number().integer().valid(1, 2, 3).optional().allow(null),
             parkingSlots: Joi.number().integer().min(0).optional().allow(null),
-            facing: Joi.number().integer().min(1).max(8).optional().allow(null)
+            facing: Joi.number().integer().min(1).max(8).optional().allow(null),
+            displayPrice: Joi.boolean().optional()
         }).optional()
     }),
 
@@ -54,7 +55,8 @@ module.exports = {
             bathrooms: Joi.number().integer().min(0).optional().allow(null),
             furnishing: Joi.number().integer().valid(1, 2, 3).optional().allow(null),
             parkingSlots: Joi.number().integer().min(0).optional().allow(null),
-            facing: Joi.number().integer().min(1).max(8).optional().allow(null)
+            facing: Joi.number().integer().min(1).max(8).optional().allow(null),
+            displayPrice: Joi.boolean().optional()
         }).optional()
     }),
 };

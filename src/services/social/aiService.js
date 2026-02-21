@@ -63,16 +63,14 @@ Your role:
         const isGreeting = greetings.some(g => msg === g || msg.startsWith(g + ' ') || msg.startsWith(g + ','));
 
         if (isGreeting) {
-            return `👋 Hello! Welcome to *${businessName}*! 
+            return `👋 Hello! Welcome to *${businessName}*! 🏠✨
 
-We specialize in premium properties across Bangalore. 🏠
+I'm here to help you find your dream property. To get started, could you please tell me:
 
-I'm here to help you find your perfect home! Are you looking to buy or rent? 
+📍 Your preferred *Location*?
+💰 Your *Budget* (e.g., 50 Lakhs, 2 Crore)?
 
-You can ask me things like:
-• "Show me properties"
-• "I need a 3BHK in Koramangala"
-• "Properties under 1 crore"`;
+Just reply with these details and I'll show you the best options! 😊`;
         }
 
         // Property request detection

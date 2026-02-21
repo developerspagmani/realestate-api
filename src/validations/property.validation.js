@@ -31,6 +31,7 @@ module.exports = {
         listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null),
         categoryId: Joi.string().uuid().optional().allow('', null),
         videoUrl: Joi.string().uri().optional().allow('', null),
+        displayPrice: Joi.boolean().optional(),
         metadata: Joi.any().optional()
     }),
 
@@ -64,6 +65,7 @@ module.exports = {
         listingType: Joi.string().valid('sale', 'rent', 'lease').optional().allow('', null),
         categoryId: Joi.string().uuid().optional().allow('', null),
         videoUrl: Joi.string().uri().optional().allow('', null),
+        displayPrice: Joi.boolean().optional(),
         metadata: Joi.any().optional()
     }),
 

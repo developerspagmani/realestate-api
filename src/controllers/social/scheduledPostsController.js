@@ -26,7 +26,7 @@ const createScheduledPost = async (req, res) => {
         } = req.body;
 
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         // Validate required fields
         if (!title || !platforms || !scheduledDate || !scheduledTime) {
@@ -113,7 +113,7 @@ const createDraft = async (req, res) => {
         } = req.body;
 
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         if (!title || !platforms) {
             return res.status(400).json({
@@ -166,7 +166,7 @@ const createDraft = async (req, res) => {
 const getScheduledPosts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { status, platform, propertyId, page = 1, limit = 20 } = req.query;
 
         const where = {
@@ -233,7 +233,7 @@ const getScheduledPosts = async (req, res) => {
 const getDrafts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
         const { page = 1, limit = 20 } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -285,7 +285,7 @@ const getScheduledPostById = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const post = await prisma.scheduledPost.findFirst({
             where: { id, userId, tenantId },
@@ -326,7 +326,7 @@ const updateScheduledPost = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         // Check if post exists and belongs to user
         const existingPost = await prisma.scheduledPost.findFirst({
@@ -396,7 +396,7 @@ const deleteScheduledPost = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const post = await prisma.scheduledPost.findFirst({
             where: { id, userId, tenantId }
@@ -434,7 +434,7 @@ const publishNow = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const result = await scheduledPostsService.publishNow(id, userId, tenantId);
 
@@ -459,7 +459,7 @@ const publishNow = async (req, res) => {
 const getStats = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const [total, scheduled, posted, failed, drafts] = await Promise.all([
             prisma.scheduledPost.count({ where: { userId, tenantId } }),
@@ -496,7 +496,7 @@ const getPostsByProperty = async (req, res) => {
     try {
         const { propertyId } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
 
         const posts = await prisma.scheduledPost.findMany({
             where: {

@@ -4,12 +4,24 @@ const { prisma } = require('../../config/database');
 const aiService = require('./aiService');
 const propertyService = require('./propertyService');
 
-const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0';
+const WHATSAPP_API_URL = 'https://graph.facebook.com/v22.0';
 
 /**
  * Enhanced WhatsApp Service with Chatbot logic
  */
 class WhatsAppService {
+    /**
+     * Clean token of common copy-paste artifacts
+     */
+    cleanToken(token) {
+        if (!token) return null;
+        // Remove 'WHATSAPP_ACCESS_TOKEN=' prefix if it exists
+        let clean = token.replace(/^WHATSAPP_ACCESS_TOKEN=/, '');
+        // Remove quotes around the token
+        clean = clean.replace(/^["']|["']$/g, '');
+        return clean.trim();
+    }
+
     /**
      * Generate appsecret_proof for Meta API calls
      * @see https://developers.facebook.com/docs/graph-api/security#appsecret_proof
@@ -19,11 +31,12 @@ class WhatsAppService {
         return null;
 
         const appSecret = process.env.META_APP_SECRET;
-        if (!appSecret || !accessToken) return null;
+        const cleanedToken = this.cleanToken(accessToken);
+        if (!appSecret || !cleanedToken) return null;
 
         return crypto
             .createHmac('sha256', appSecret)
-            .update(accessToken)
+            .update(cleanedToken)
             .digest('hex');
     }
 
@@ -32,7 +45,8 @@ class WhatsAppService {
      */
     async syncTemplatesFromMeta({ tenantId, wabaId, accessToken }) {
         try {
-            const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
 
             if (!token) {
                 return {
@@ -46,8 +60,6 @@ class WhatsAppService {
             const params = appsecretProof ? { appsecret_proof: appsecretProof } : {};
 
             console.log(`[WhatsAppService] Syncing templates for WABA: ${wabaId}`);
-            console.log(`[WhatsAppService] URL: ${url}`);
-            console.log(`[WhatsAppService] Params:`, params);
 
             const response = await axios.get(url, {
                 params,
@@ -116,7 +128,8 @@ class WhatsAppService {
      */
     async sendTextMessage({ phoneNumberId, to, text, accessToken }) {
         try {
-            const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
 
             const response = await axios.post(
@@ -145,7 +158,8 @@ class WhatsAppService {
      */
     async sendMessage({ phoneNumberId, to, templateName, components, languageCode = 'en', accessToken }) {
         try {
-            const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
 
             const messageData = {
@@ -160,6 +174,8 @@ class WhatsAppService {
                 },
                 ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
             };
+
+            console.log(`[WhatsAppService] Sending template message: ${templateName} to ${to} (Language: ${languageCode})`);
 
             if (components && components.length > 0) {
                 messageData.template.components = components;
@@ -194,7 +210,8 @@ class WhatsAppService {
      */
     async sendButtonsMessage({ phoneNumberId, to, text, buttons, accessToken }) {
         try {
-            const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
 
             const response = await axios.post(
@@ -314,7 +331,9 @@ class WhatsAppService {
                             ...filters,
                             lastUpdated: new Date()
                         },
-                        budget: filters.maxPrice ? filters.maxPrice : lead.budget
+                        budget: filters.maxPrice ? filters.maxPrice : lead.budget,
+                        status: lead.status === 1 ? 2 : lead.status, // Move from New to Contacted if it was new
+                        notes: lead.notes + `\n[${new Date().toLocaleDateString()}] User asked for: ${userText}`
                     }
                 });
             }
@@ -443,12 +462,20 @@ class WhatsAppService {
             let sentCount = 0;
             let failedCount = 0;
 
+            // Fetch template to get the correct language code
+            const template = await prisma.whatsAppTemplate.findFirst({
+                where: { tenantId, name: templateName }
+            });
+
+            const languageCode = template?.language || 'en_US';
+
             for (const recipient of recipients) {
                 const result = await this.sendMessage({
                     phoneNumberId,
                     to: recipient.phone,
                     templateName,
                     components: recipient.components,
+                    languageCode,
                     accessToken
                 });
 
@@ -492,31 +519,122 @@ class WhatsAppService {
      * Basic Metadata helper
      */
     async getBusinessAccountInfo(wabaId, accessToken) {
-        const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
-        const appsecretProof = this.generateAppSecretProof(token);
+        try {
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
+            const appsecretProof = this.generateAppSecretProof(token);
 
-        const response = await axios.get(`${WHATSAPP_API_URL}/${wabaId}`, {
-            params: {
-                fields: 'id,name,timezone_id,message_template_namespace',
-                ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-            },
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        return { success: true, data: response.data };
+            const response = await axios.get(`${WHATSAPP_API_URL}/${wabaId}`, {
+                params: {
+                    fields: 'id,name,timezone_id,message_template_namespace',
+                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
+                },
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Get business info error:', error.response?.data || error.message);
+            return {
+                success: false,
+                message: error.response?.data?.error?.message || 'Failed to fetch business info'
+            };
+        }
     }
 
     async getPhoneNumberInfo(phoneNumberId, accessToken) {
-        const token = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
-        const appsecretProof = this.generateAppSecretProof(token);
+        try {
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
+            const appsecretProof = this.generateAppSecretProof(token);
 
-        const response = await axios.get(`${WHATSAPP_API_URL}/${phoneNumberId}`, {
-            params: {
-                fields: 'id,display_phone_number,verified_name,quality_rating',
-                ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-            },
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        return { success: true, data: response.data };
+            const response = await axios.get(`${WHATSAPP_API_URL}/${phoneNumberId}`, {
+                params: {
+                    fields: 'id,display_phone_number,verified_name,quality_rating',
+                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
+                },
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return { success: true, data: response.data };
+        } catch (error) {
+            console.error('Get phone info error:', error.response?.data || error.message);
+            return {
+                success: false,
+                message: error.response?.data?.error?.message || 'Failed to fetch phone info'
+            };
+        }
+    }
+
+    /**
+     * Create WhatsApp message template in Meta
+     */
+    async createTemplate({ wabaId, name, category, language, components, accessToken }) {
+        try {
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
+            const appsecretProof = this.generateAppSecretProof(token);
+
+            const response = await axios.post(
+                `${WHATSAPP_API_URL}/${wabaId}/message_templates`,
+                {
+                    name,
+                    category,
+                    language,
+                    components,
+                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
+                },
+                {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }
+            );
+
+            return {
+                success: true,
+                data: response.data
+            };
+        } catch (error) {
+            console.error('Create template error:', error.response?.data || error.message);
+            let message = error.response?.data?.error?.message || 'Failed to create template';
+
+            // Helpful hint for common ID confusion
+            if (message.includes('Object with ID') && message.includes('does not exist')) {
+                message += " (Tip: Check if you provided a WABA ID instead of a Phone ID, or vice versa)";
+            }
+
+            return {
+                success: false,
+                message
+            };
+        }
+    }
+
+    /**
+     * Delete WhatsApp message template in Meta
+     */
+    async deleteTemplate(wabaId, templateName, accessToken) {
+        try {
+            const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
+            const token = this.cleanToken(rawToken);
+            const appsecretProof = this.generateAppSecretProof(token);
+
+            await axios.delete(
+                `${WHATSAPP_API_URL}/${wabaId}/message_templates`,
+                {
+                    params: {
+                        name: templateName,
+                        ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
+                    },
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }
+            );
+
+            return { success: true };
+        } catch (error) {
+            console.error('Delete template error:', error.response?.data || error.message);
+            return {
+                success: false,
+                message: error.response?.data?.error?.message || 'Failed to delete template'
+            };
+        }
     }
 }
 

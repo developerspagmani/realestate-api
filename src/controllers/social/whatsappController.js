@@ -308,6 +308,89 @@ const createCampaign = async (req, res) => {
 };
 
 /**
+ * Update WhatsApp campaign
+ * @route PATCH /api/social/whatsapp/campaigns/:id
+ */
+const updateCampaign = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const userId = req.user.id;
+        const { name, status, scheduledAt } = req.body;
+
+        const campaign = await prisma.whatsAppCampaign.findFirst({
+            where: { id, tenantId, userId }
+        });
+
+        if (!campaign) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        const updatedCampaign = await prisma.whatsAppCampaign.update({
+            where: { id },
+            data: {
+                ...(name && { name }),
+                ...(status && { status }),
+                ...(scheduledAt && { scheduledAt: new Date(scheduledAt) }),
+                updatedAt: new Date()
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            data: { campaign: updatedCampaign }
+        });
+    } catch (error) {
+        console.error('Update campaign error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error updating campaign'
+        });
+    }
+};
+
+/**
+ * Delete WhatsApp campaign
+ * @route DELETE /api/social/whatsapp/campaigns/:id
+ */
+const deleteCampaign = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const userId = req.user.id;
+
+        const campaign = await prisma.whatsAppCampaign.findFirst({
+            where: { id, tenantId, userId }
+        });
+
+        if (!campaign) {
+            return res.status(404).json({
+                success: false,
+                message: 'Campaign not found'
+            });
+        }
+
+        await prisma.whatsAppCampaign.delete({
+            where: { id }
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Campaign deleted successfully'
+        });
+    } catch (error) {
+        console.error('Delete campaign error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error deleting campaign'
+        });
+    }
+};
+
+/**
  * Get campaign by ID
  * @route GET /api/social/whatsapp/campaigns/:id
  */
@@ -453,11 +536,18 @@ const sendMessage = async (req, res) => {
 
         let result;
         if (templateName) {
+            // Fetch template to get the correct language code
+            const template = await prisma.whatsAppTemplate.findFirst({
+                where: { tenantId, name: templateName }
+            });
+            const languageCode = template?.language || 'en_US';
+
             result = await whatsappService.sendMessage({
                 phoneNumberId,
                 to,
                 templateName,
                 components,
+                languageCode,
                 accessToken
             });
         } else {
@@ -553,10 +643,17 @@ const verifyWebhook = (req, res) => {
 
     const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'your_verify_token';
 
+    console.log('[WhatsApp Webhook Verification] Start');
+    console.log('Mode:', mode);
+    console.log('Challenge received:', !!challenge);
+    console.log('Token received:', token);
+    console.log('Expected Token:', VERIFY_TOKEN);
+
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log('Webhook verified');
+        console.log('✅ Webhook verified successfully');
         res.status(200).send(challenge);
     } else {
+        console.error('❌ Webhook verification failed: Token mismatch or invalid mode');
         res.status(403).send('Forbidden');
     }
 };
@@ -613,6 +710,8 @@ module.exports = {
     deleteTemplate,
     getCampaigns,
     createCampaign,
+    updateCampaign,
+    deleteCampaign,
     getCampaignById,
     getCampaignStats,
     getMessages,
