@@ -36,6 +36,31 @@ class WorkflowService {
     }
 
     /**
+     * Trigger workflows for a lead based on an event
+     */
+    static async triggerWorkflows(tenantId, leadId, triggerType, metadata = {}) {
+        try {
+            const workflows = await prisma.marketingWorkflow.findMany({
+                where: { tenantId, status: 1 }
+            });
+
+            for (const wf of workflows) {
+                const trigger = typeof wf.trigger === 'string' ? JSON.parse(wf.trigger) : wf.trigger;
+                if (!trigger || trigger.type !== triggerType) continue;
+
+                // Additional logic for specific triggers
+                if (triggerType === 'FORM_SUBMITTED' && trigger.formId && trigger.formId !== metadata.formId) continue;
+                if (triggerType === 'STATUS_CHANGED' && trigger.status && parseInt(trigger.status) !== parseInt(metadata.newStatus)) continue;
+                if (triggerType === 'TAG_ADDED' && trigger.tag && trigger.tag !== metadata.tag) continue;
+
+                await this.enrollLead(wf.id, leadId);
+            }
+        } catch (error) {
+            console.error(`Trigger workflows error for ${triggerType}:`, error);
+        }
+    }
+
+    /**
      * Process active enrollments (Main Engine)
      */
     static async processWorkflows() {

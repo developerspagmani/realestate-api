@@ -317,26 +317,13 @@ class WhatsAppService {
                 });
             }
 
-            // Extract filters using AI Service
-            const filters = await aiService.extractFilters(userText);
+            // Enrich lead preferences using Unified Automation Hub logic
+            const leadNurtureService = require('./leadNurtureService');
+            await leadNurtureService.enrichLeadPreferences(lead.id, userText);
 
-            // Update lead preferences if filters found
-            if (Object.keys(filters).length > 0) {
-                const currentPrefs = lead.preferences || {};
-                await prisma.lead.update({
-                    where: { id: lead.id },
-                    data: {
-                        preferences: {
-                            ...currentPrefs,
-                            ...filters,
-                            lastUpdated: new Date()
-                        },
-                        budget: filters.maxPrice ? filters.maxPrice : lead.budget,
-                        status: lead.status === 1 ? 2 : lead.status, // Move from New to Contacted if it was new
-                        notes: lead.notes + `\n[${new Date().toLocaleDateString()}] User asked for: ${userText}`
-                    }
-                });
-            }
+            // Re-fetch lead to get updated preferences for interaction logging
+            const updatedLead = await prisma.lead.findUnique({ where: { id: lead.id } });
+            const filters = updatedLead.preferences || {};
 
             // Log interaction
             await prisma.leadInteraction.create({

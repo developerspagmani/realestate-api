@@ -4,38 +4,101 @@ const publicController = {
     // Get all properties (Listing)
     getProperties: async (req, res) => {
         try {
-            const { tenantId, city, propertyType } = req.query;
+            const {
+                tenantId,
+                city,
+                propertyType,
+                minPrice,
+                maxPrice,
+                bedrooms,
+                bathrooms,
+                listingType,
+                search,
+                page = 1,
+                limit = 50
+            } = req.query;
 
             // Notice we REQUIRE tenantId for multi-tenancy isolation
             if (!tenantId) {
                 return res.status(400).json({ success: false, message: 'Tenant ID is required for public discovery.' });
             }
 
-            const properties = await prisma.property.findMany({
-                where: {
-                    tenantId,
-                    status: 1,
-                    ...(city ? { city: { contains: city, mode: 'insensitive' } } : {}),
-                    ...(propertyType ? { propertyType: parseInt(propertyType) } : {})
-                },
-                include: {
-                    mainImage: true,
-                    _count: {
-                        select: { units: true }
-                    },
-                    units: {
-                        include: {
-                            unitPricing: true,
-                            mainImage: true
-                        },
-                        take: 4 // Only need a few for preview
-                    }
-                },
-                orderBy: { createdAt: 'desc' },
-                take: 50
-            });
+            const pageInt = parseInt(page) || 1;
+            const limitInt = parseInt(limit) || 50;
+            const skip = (pageInt - 1) * limitInt;
 
-            res.json({ success: true, data: properties });
+            // Build complex filter
+            const where = {
+                tenantId,
+                status: 1
+            };
+
+            if (city) where.city = { contains: city, mode: 'insensitive' };
+            if (propertyType) where.propertyType = parseInt(propertyType);
+            if (bedrooms) where.bedrooms = { gte: parseInt(bedrooms) };
+            if (bathrooms) where.bathrooms = { gte: parseInt(bathrooms) };
+            if (listingType) where.listingType = listingType;
+
+            // Price filtering
+            if (minPrice || maxPrice) {
+                where.price = {};
+                if (minPrice) where.price.gte = parseFloat(minPrice);
+                if (maxPrice) where.price.lte = parseFloat(maxPrice);
+            }
+
+            // Keyword search
+            if (search) {
+                where.OR = [
+                    { title: { contains: search, mode: 'insensitive' } },
+                    { description: { contains: search, mode: 'insensitive' } },
+                    { neighborhood: { contains: search, mode: 'insensitive' } },
+                    { city: { contains: search, mode: 'insensitive' } }
+                ];
+
+                // Async log search trend (Don't await to not block the request)
+                prisma.leadInteraction.create({
+                    data: {
+                        tenantId,
+                        leadId: '00000000-0000-0000-0000-000000000000', // System identifier for public search
+                        type: 'SEARCH',
+                        metadata: { keyword: search, city: city || 'Unknown' }
+                    }
+                }).catch(e => console.error('Failed to log search trend:', e));
+            }
+
+            const [properties, total] = await Promise.all([
+                prisma.property.findMany({
+                    where,
+                    include: {
+                        mainImage: true,
+                        _count: {
+                            select: { units: true }
+                        },
+                        units: {
+                            include: {
+                                unitPricing: true,
+                                mainImage: true
+                            },
+                            take: 4 // Only need a few for preview
+                        }
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    skip,
+                    take: limitInt
+                }),
+                prisma.property.count({ where })
+            ]);
+
+            res.json({
+                success: true,
+                data: properties,
+                pagination: {
+                    total,
+                    page: pageInt,
+                    limit: limitInt,
+                    pages: Math.ceil(total / limitInt)
+                }
+            });
         } catch (error) {
             console.error('Public Listing Error:', error);
             res.status(500).json({ success: false, message: 'Server error (listing)' });

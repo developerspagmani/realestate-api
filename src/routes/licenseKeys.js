@@ -4,7 +4,8 @@ const {
     generateKeys,
     getAllKeys,
     validateKey,
-    activateKey
+    activateKey,
+    adminAssignKey
 } = require('../controllers/licenseKeyController');
 
 const router = express.Router();
@@ -18,5 +19,6 @@ router.post('/activate', auth, activateKey);
 // Admin routes
 router.get('/', auth, authorize('ADMIN'), getAllKeys);
 router.post('/generate', auth, authorize('ADMIN'), generateKeys);
+router.post('/assign', auth, authorize('ADMIN'), adminAssignKey);
 
 module.exports = router;

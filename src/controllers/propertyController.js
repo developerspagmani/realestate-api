@@ -31,7 +31,8 @@ const createProperty = async (req, res) => {
       lotSize,
       listingType,
       categoryId,
-      videoUrl
+      videoUrl,
+      price
     } = req.body;
 
     const isAdmin = req.user.role === 2;
@@ -85,6 +86,7 @@ const createProperty = async (req, res) => {
           bathrooms: bathrooms ? parseInt(bathrooms) : null,
           lotSize: lotSize ? parseInt(lotSize) : null,
           listingType: listingType || 'Rent',
+          price: price ? parseFloat(price) : null,
           categoryId: categoryId && categoryId !== '' ? categoryId : null,
           videoUrl: videoUrl || null
         }
@@ -103,6 +105,13 @@ const createProperty = async (req, res) => {
       }
 
       return property;
+    });
+
+    const leadNurtureService = require('../services/social/leadNurtureService');
+
+    // Trigger proactive matching in background
+    leadNurtureService.findMatchesForNewProperty(result.id).catch(err => {
+      console.error('Error triggering matching engine:', err);
     });
 
     res.status(201).json({
@@ -155,6 +164,14 @@ const getProperties = async (req, res) => {
       where.agentProperties = {
         some: { agentId }
       };
+    }
+
+    if (req.query.search) {
+      where.OR = [
+        { title: { contains: req.query.search, mode: 'insensitive' } },
+        { city: { contains: req.query.search, mode: 'insensitive' } },
+        { neighborhood: { contains: req.query.search, mode: 'insensitive' } }
+      ];
     }
 
     // Owner/Admin filtering
@@ -301,6 +318,7 @@ const updateProperty = async (req, res) => {
     if (updateData.parkingSpaces) updateData.parkingSpaces = parseInt(updateData.parkingSpaces);
     if (updateData.bedrooms) updateData.bedrooms = parseInt(updateData.bedrooms);
     if (updateData.bathrooms) updateData.bathrooms = parseInt(updateData.bathrooms);
+    if (updateData.price) updateData.price = parseFloat(updateData.price);
     if (updateData.lotSize) updateData.lotSize = parseInt(updateData.lotSize);
     if (updateData.categoryId === '') updateData.categoryId = null;
 

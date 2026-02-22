@@ -348,6 +348,16 @@ const widgetController = {
                 });
             }
 
+            // Phase 1: Unified Lead Aggregator - Stop leakage by enriching lead with AI analysis
+            if (notes || name) {
+                try {
+                    const leadNurtureService = require('../services/social/leadNurtureService');
+                    await leadNurtureService.enrichLeadPreferences(lead.id, notes || `Inquiry from ${name}`);
+                } catch (err) {
+                    console.error('Error enriching lead via widget:', err);
+                }
+            }
+
             // Record the interaction and handle booking module entry
             const interactionType = isBooking ? 'BOOKING_REQUEST' : (source === 'widget_chatbot' ? 'CHAT_INIT' : 'FORM_SUBMIT');
             const scoreWeight = interactionType === 'CHAT_INIT' ? 10 : (isBooking ? 30 : 20);
@@ -404,6 +414,15 @@ const widgetController = {
                 }
             } catch (assignError) {
                 console.error('Error in auto-assignment:', assignError);
+            }
+
+            // Trigger FORM_SUBMITTED workflows
+            try {
+                const WorkflowService = require('../services/marketing/WorkflowService');
+                const triggerType = isBooking ? 'LEAD_CREATED' : 'FORM_SUBMITTED';
+                await WorkflowService.triggerWorkflows(widget.tenantId, lead.id, triggerType, { widgetId: widget.id });
+            } catch (wfError) {
+                console.error('Error triggering widget workflows:', wfError);
             }
 
             // Notifications

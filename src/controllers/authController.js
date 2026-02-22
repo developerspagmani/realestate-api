@@ -121,6 +121,16 @@ const register = async (req, res) => {
           actualPlanId = keyRecord.planId;
         }
 
+        // Default to free-starter plan if no plan specified and no license key
+        if (!actualPlanId) {
+          const freePlan = await tx.plan.findUnique({
+            where: { slug: 'free-starter' }
+          });
+          if (freePlan) {
+            actualPlanId = freePlan.id;
+          }
+        }
+
         // Generate basic domain slug
         const domainSlug = tenantName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.floor(Math.random() * 10000);
 
@@ -159,32 +169,28 @@ const register = async (req, res) => {
               tenantId: tenant.id,
               activatedAt: new Date(),
               userId: null // We'll link this after user is created
-            },
-            include: {
-              plan: {
-                include: {
-                  modules: true
-                }
-              }
             }
           });
+        }
 
-          // Assign modules from plan to tenant
-          if (keyRecord.plan && keyRecord.plan.modules) {
-            const moduleAssignments = keyRecord.plan.modules.map(mod => ({
-              tenantId: tenant.id,
-              moduleId: mod.id,
-              isActive: true
-            }));
+        // Assign plan modules to the tenant if a plan exists
+        if (actualPlanId) {
+          const planWithModules = await tx.plan.findUnique({
+            where: { id: actualPlanId },
+            include: { modules: true }
+          });
 
-            if (moduleAssignments.length > 0) {
-              await tx.tenantModule.createMany({
-                data: moduleAssignments
-              });
-            }
+          if (planWithModules && planWithModules.modules && planWithModules.modules.length > 0) {
+            await tx.tenantModule.createMany({
+              data: planWithModules.modules.map(mod => ({
+                tenantId: tenant.id,
+                moduleId: mod.id,
+                isActive: true
+              }))
+            });
           }
         } else {
-          // New owner registration without key -> Assign all active modules for trial
+          // Fallback if no plan is found: assign all active modules for trial
           const allModules = await tx.module.findMany({ where: { status: 1 } });
           if (allModules.length > 0) {
             await tx.tenantModule.createMany({

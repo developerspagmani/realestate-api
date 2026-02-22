@@ -86,9 +86,9 @@ const websiteController = {
                     name,
                     configuration,
                     slug,
-                    customDomain,
-                    tenantId: finalTenantId,
-                    propertyId
+                    customDomain: customDomain || null,
+                    tenantId: finalTenantId || null,
+                    propertyId: propertyId || null
                 }
             });
 
@@ -118,9 +118,9 @@ const websiteController = {
                     name,
                     configuration,
                     slug,
-                    customDomain,
+                    customDomain: customDomain || null,
                     status,
-                    propertyId
+                    propertyId: propertyId || null
                 }
             });
 

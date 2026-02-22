@@ -9,7 +9,10 @@ const {
   getAllProperties,
   getSystemSettings,
   updateSystemSetting,
-  extendTrial
+  extendTrial,
+  setTenantExpiry,
+  revokeKey,
+  getTenantSubscriptionDetail
 } = require('../controllers/adminController');
 
 const {
@@ -36,6 +39,15 @@ router.post('/settings', auth, authorize(2), updateSystemSetting);
 
 // Trial Extension (Admin only)
 router.post('/tenants/extend-trial', auth, authorize(2), extendTrial);
+// Set explicit expiry date (Admin only)
+router.post('/tenants/set-expiry', auth, authorize(2), setTenantExpiry);
+// Revoke license key from tenant (Admin only)
+router.post('/tenants/revoke-key', auth, authorize(2), revokeKey);
+// Get full subscription detail for a tenant (Admin only)
+router.get('/tenants/:tenantId/subscription', auth, authorize(2), getTenantSubscriptionDetail);
+// Admin assign license key to tenant
+const { adminAssignKey } = require('../controllers/licenseKeyController');
+router.post('/license-keys/assign', auth, authorize(2), adminAssignKey);
 
 // User management (Admin only)
 router.get('/users', auth, authorize(2), getUsers);
@@ -66,5 +78,9 @@ router.post('/workspace', auth, authorize(2, 3), validate(schemas.createSpace), 
 
 // Analytics
 router.get('/analytics', auth, authorize(2, 3), getSystemAnalytics);
+
+// Advanced Analytics
+const advancedAnalyticsRoutes = require('./analyticsRoutes');
+router.use('/analytics-pro', advancedAnalyticsRoutes);
 
 module.exports = router;

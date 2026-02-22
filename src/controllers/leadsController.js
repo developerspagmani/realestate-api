@@ -374,7 +374,6 @@ const createLead = async (req, res) => {
       const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
       const settings = tenant?.settings || {};
       if (settings.notifications?.emailLeads) {
-        // Find tenant owner or admin email
         const owner = await prisma.user.findFirst({
           where: { tenantId, role: 3 }, // role 3 = OWNER
           select: { email: true }
@@ -388,18 +387,15 @@ const createLead = async (req, res) => {
         }
       }
 
-      // Auto-enroll in matching marketing workflows
-      const WorkflowService = require('../services/marketing/WorkflowService');
-      const workflows = await prisma.marketingWorkflow.findMany({
-        where: { tenantId, status: 1 }
-      });
-
-      for (const wf of workflows) {
-        const trigger = typeof wf.trigger === 'string' ? JSON.parse(wf.trigger) : wf.trigger;
-        if (trigger?.type === 'LEAD_CREATED') {
-          await WorkflowService.enrollLead(wf.id, lead.id);
-        }
+      // Enrich lead preferences from message
+      const leadNurtureService = require('../services/social/leadNurtureService');
+      if (lead.message) {
+        await leadNurtureService.enrichLeadPreferences(lead.id, lead.message);
       }
+
+      // Trigger LEAD_CREATED workflows
+      const WorkflowService = require('../services/marketing/WorkflowService');
+      await WorkflowService.triggerWorkflows(tenantId, lead.id, 'LEAD_CREATED');
     } catch (emailError) {
       console.error('Error in lead creation extra processes:', emailError);
     }
@@ -467,6 +463,14 @@ const updateLeadStatus = async (req, res) => {
         }
       }
     });
+
+    // Trigger STATUS_CHANGED workflows in the background
+    try {
+      const WorkflowService = require('../services/marketing/WorkflowService');
+      await WorkflowService.triggerWorkflows(tenantId, id, 'STATUS_CHANGED', { newStatus: status });
+    } catch (wfError) {
+      console.error('Error triggering STATUS_CHANGED workflows:', wfError);
+    }
 
     res.status(200).json({
       success: true,

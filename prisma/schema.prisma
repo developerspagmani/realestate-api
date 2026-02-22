@@ -208,6 +208,7 @@ model Property {
   parkingSpaces Int?    @map("parking_spaces")
   bedrooms     Int?
   bathrooms    Int?
+  price        Decimal? @db.Decimal(15, 2)
   lotSize      Int?     @map("lot_size")
   listingType  String?  @default("Rent") @map("listing_type")
 

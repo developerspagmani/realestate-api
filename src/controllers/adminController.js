@@ -777,6 +777,116 @@ const extendTrial = async (req, res) => {
   }
 };
 
+// Set an explicit expiry date for a tenant subscription (Admin only)
+const setTenantExpiry = async (req, res) => {
+  try {
+    const { tenantId, expiresAt } = req.body;
+    if (!tenantId || !expiresAt) {
+      return res.status(400).json({ success: false, message: 'Missing tenantId or expiresAt' });
+    }
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { subscriptionExpiresAt: new Date(expiresAt) },
+      select: { id: true, subscriptionExpiresAt: true, subscriptionStatus: true }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Subscription expiry updated successfully',
+      data: updated
+    });
+  } catch (error) {
+    console.error('Set tenant expiry error:', error);
+    res.status(500).json({ success: false, message: 'Error updating expiry date' });
+  }
+};
+
+// Revoke (unlink) an active license key from a tenant (Admin only)
+const revokeKey = async (req, res) => {
+  try {
+    const { tenantId } = req.body;
+    if (!tenantId) {
+      return res.status(400).json({ success: false, message: 'tenantId is required' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Unlink all keys from tenant
+      await tx.licenseKey.updateMany({
+        where: { tenantId, status: 2 },
+        data: { tenantId: null, status: 1 } // Reset to unused
+      });
+
+      // Set tenant back to trial
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          planId: null,
+          subscriptionStatus: 3, // Trial
+          subscriptionExpiresAt: null
+        }
+      });
+
+      // Deactivate all modules
+      await tx.tenantModule.updateMany({
+        where: { tenantId },
+        data: { isActive: false }
+      });
+    });
+
+    res.status(200).json({ success: true, message: 'License key revoked. Tenant set back to trial.' });
+  } catch (error) {
+    console.error('Revoke key error:', error);
+    res.status(500).json({ success: false, message: 'Error revoking license key' });
+  }
+};
+
+// Get tenant subscription detail (license, plan, modules) — Admin only
+const getTenantSubscriptionDetail = async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+
+    const [tenant, activeKey, tenantModules] = await Promise.all([
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+          id: true,
+          name: true,
+          domain: true,
+          planId: true,
+          subscriptionStatus: true,
+          subscriptionExpiresAt: true,
+          plan: { select: { id: true, name: true, slug: true, price: true, interval: true } }
+        }
+      }),
+      prisma.licenseKey.findFirst({
+        where: { tenantId, status: 2 },
+        include: { plan: { select: { id: true, name: true, slug: true } } },
+        orderBy: { activatedAt: 'desc' }
+      }),
+      prisma.tenantModule.findMany({
+        where: { tenantId },
+        include: { module: { select: { id: true, name: true, slug: true, description: true } } }
+      })
+    ]);
+
+    if (!tenant) {
+      return res.status(404).json({ success: false, message: 'Tenant not found' });
+    }
+
+    res.json({
+      success: true,
+      data: { tenant, activeKey, tenantModules }
+    });
+  } catch (error) {
+    console.error('Get tenant subscription detail error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching subscription detail' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllUsers,
@@ -790,5 +900,8 @@ module.exports = {
   getAllProperties,
   getSystemSettings,
   updateSystemSetting,
-  extendTrial
+  extendTrial,
+  setTenantExpiry,
+  revokeKey,
+  getTenantSubscriptionDetail
 };
