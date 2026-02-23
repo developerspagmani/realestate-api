@@ -8,7 +8,7 @@ const whatsappService = require('./whatsappService');
  * Handles Lead Matching, Nurturing, and Omni-channel notifications
  */
 class LeadNurtureService {
-    async enrichLeadPreferences(leadId, messageText, structuredData = {}) {
+    async enrichLeadPreferences(leadId, messageText, structuredData = {}, options = {}) {
         try {
             const lead = await prisma.lead.findUnique({ where: { id: leadId } });
             if (!lead) return;
@@ -47,7 +47,9 @@ class LeadNurtureService {
                 console.log(`[LeadNurture] Enriched lead ${lead.id} with preferences:`, combinedFilters);
 
                 // Immediately check if anything exists now
-                await this.checkMatchesForLead(lead.id);
+                if (!options.skipNotification) {
+                    await this.checkMatchesForLead(lead.id);
+                }
             }
         } catch (error) {
             console.error('[LeadNurture] Enrichment error:', error);

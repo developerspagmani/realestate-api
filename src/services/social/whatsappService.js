@@ -327,7 +327,8 @@ class WhatsAppService {
 
             // Enrich lead preferences using Unified Automation Hub logic
             const leadNurtureService = require('./leadNurtureService');
-            await leadNurtureService.enrichLeadPreferences(lead.id, userText);
+            // skipNotification: true because whatsappService handles its own interactive reply below
+            await leadNurtureService.enrichLeadPreferences(lead.id, userText, {}, { skipNotification: true });
 
             // Re-fetch lead to get updated preferences for interaction logging
             const updatedLead = await prisma.lead.findUnique({ where: { id: lead.id } });
