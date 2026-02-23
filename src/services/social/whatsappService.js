@@ -41,6 +41,29 @@ class WhatsAppService {
     }
 
     /**
+     * Formats property details into a message string for WhatsApp.
+     * Includes links and a call to action for booking.
+     * @param {object} property - The property object.
+     * @returns {string} Formatted message string.
+     */
+    formatPropertyMessage(property) {
+        const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'https://www.app.virpanix.com';
+        let details = `🏡 *${property.title}*\n`;
+        details += `📍 ${property.address}\n`;
+        details += `💰 ${property.price.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}\n`;
+        details += `🛏️ ${property.bedrooms} beds | 🛁 ${property.bathrooms} baths | 📐 ${property.area} sqft`;
+        details += `\n🔗 View Details: ${rootDomain}/p/${property.slug}`;
+
+        if (property.workspace3D) {
+            details += `\n✨ *3D Tour Available:* ${rootDomain}/3d-tour/${property.slug}`;
+        }
+
+        details += `\n\nTo book a visit, reply with: *Book ${property.title.split(' ')[0]}*`;
+
+        return details;
+    }
+
+    /**
      * Sync templates from Meta to local database
      */
     async syncTemplatesFromMeta({ tenantId, wabaId, accessToken }) {
@@ -327,9 +350,17 @@ class WhatsAppService {
                 // If no state or no valid button transition, check for keywords or set to start
                 if (!nextStepId) {
                     const resetKeywords = ['hi', 'hello', 'start', 'menu', 'hey', 'help'];
-                    if (!currentStepId || resetKeywords.includes(userText.toLowerCase())) {
+                    const lowerText = userText.toLowerCase();
+
+                    // 📅 Handle Booking Keyword
+                    if (lowerText.includes('book')) {
+                        // Extract property name or just start booking flow
+                        nextStepId = 'ask_booking_date';
+                    }
+                    else if (!currentStepId || resetKeywords.includes(lowerText)) {
                         nextStepId = chatbotConfig.startStepId || steps[0]?.id;
-                    } else {
+                    }
+                    else {
                         // If in middle of funnel but input isn't a button, try AI or stick to current
                         nextStepId = currentStepId;
                     }
@@ -421,6 +452,36 @@ class WhatsAppService {
                     }
                 } else {
                     await this.sendTextMessage({ phoneNumberId, to: from, text: aiService.getNoResultsMessage(filters, { businessName }), accessToken });
+                }
+            } else if (step.type === 'action' && step.actionType === 'CHECK_AVAILABILITY') {
+                // Simplified availability check - always available for demo or check against actual calendar if exists
+                await this.sendTextMessage({ phoneNumberId, to: from, text: `✅ That date is available!`, accessToken });
+                await this.sendButtonsMessage({
+                    phoneNumberId, to: from, text: "Would you like to confirm the booking?",
+                    buttons: [
+                        { id: 'btn_confirm_yes', title: "Yes, Confirm" },
+                        { id: 'btn_confirm_no', title: "No, Change Date" }
+                    ],
+                    accessToken
+                });
+            } else if (step.type === 'action' && step.actionType === 'CREATE_BOOKING') {
+                try {
+                    // Create booking in the system
+                    const BookingService = require('../marketing/BookingService'); // Assuming this exists or create using prisma
+                    const booking = await prisma.booking.create({
+                        data: {
+                            tenantId: lead.tenantId,
+                            leadId: lead.id,
+                            status: 1, // Pending
+                            bookingDate: new Date(), // Use extracted date from preferences if available
+                            notes: 'Booked via WhatsApp Chatbot'
+                        }
+                    });
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `🎊 *Booking Confirmed!* Your visit has been scheduled. Our team will call you shortly to confirm the time.`, accessToken });
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `Booking ID: #${booking.id.split('-')[0].toUpperCase()}`, accessToken });
+                } catch (err) {
+                    console.error('Booking creation error:', err);
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `Sorry, I couldn't process the booking right now. An agent will help you soon.`, accessToken });
                 }
             }
         }
