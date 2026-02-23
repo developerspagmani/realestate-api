@@ -251,157 +251,132 @@ class WhatsAppService {
         try {
             const { from, id: messageId, text, type, interactive } = message;
             const phoneNumberId = metadata.phone_number_id;
-            const displayPhoneNumber = metadata.display_phone_number;
 
-            // Find connected account by phoneNumberId in metadata
+            // Find connected account
             const account = await prisma.connectedAccount.findFirst({
                 where: {
                     platform: 'WHATSAPP',
-                    metadata: {
-                        path: ['phoneNumberId'],
-                        equals: phoneNumberId
-                    }
+                    metadata: { path: ['phoneNumberId'], equals: phoneNumberId }
                 },
-                include: { tenant: true }
+                include: { tenant: { include: { whatsappChatbot: true } } }
             });
 
-            if (!account) {
-                console.warn(`No connected account found for phoneNumberId: ${phoneNumberId}`);
-                return { success: false };
-            }
+            if (!account) return { success: false };
 
             const tenantId = account.tenantId;
             const accessToken = account.accessToken;
             const businessName = account.tenant.name;
+            const chatbotConfig = account.tenant.whatsappChatbot;
 
             // Save incoming message
-            const savedMessage = await prisma.whatsAppMessage.create({
+            let userText = text?.body || (interactive?.button_reply?.title) || `[${type}]`;
+            await prisma.whatsAppMessage.create({
                 data: {
                     tenantId,
                     senderNumber: from,
-                    messageText: text?.body || (interactive?.button_reply?.title) || `[${type}]`,
+                    messageText: userText,
                     direction: 'INBOUND',
                     metaMessageId: messageId,
                     status: 'received'
                 }
             });
 
-            // Process message (Chatbot logic)
-            let userText = text?.body || '';
-            if (interactive?.button_reply) {
-                userText = interactive.button_reply.title;
-            }
+            if (!userText && !interactive) return { success: true };
 
-            if (!userText) return { success: true };
-
-            // 1. Manage Lead
-            let lead = await prisma.lead.findFirst({
-                where: {
-                    tenantId,
-                    phone: from
-                }
-            });
-
+            // Manage Lead
+            let lead = await prisma.lead.findFirst({ where: { tenantId, phone: from } });
             if (!lead) {
-                // Create new lead
                 lead = await prisma.lead.create({
                     data: {
                         tenantId,
                         name: `WhatsApp User (${from})`,
                         phone: from,
-                        source: 7, // Chatbot
-                        status: 1, // New
-                        priority: 2, // Medium
-                        notes: `Original sender: ${from}`
+                        source: 7,
+                        status: 1
                     }
                 });
-
-                // Trigger LEAD_CREATED workflow
                 try {
                     const WorkflowService = require('../marketing/WorkflowService');
                     await WorkflowService.triggerWorkflows(tenantId, lead.id, 'LEAD_CREATED');
-                } catch (wfError) {
-                    console.error('Error triggering WhatsApp lead workflow:', wfError);
+                } catch (e) { }
+            }
+
+            // 🤖 CONFIGURABLE FUNNEL LOGIC
+            if (chatbotConfig && chatbotConfig.isActive) {
+                const steps = chatbotConfig.steps || [];
+                let currentStepId = lead.preferences?.chatbotStepId;
+                let nextStepId = null;
+
+                // 1. Handle Response to previous step
+                if (interactive?.button_reply) {
+                    const buttonId = interactive.button_reply.id;
+                    // Find the button in the current step to determine next step and data to save
+                    const currentStep = steps.find(s => s.id === currentStepId);
+                    const button = currentStep?.buttons?.find(b => b.label === interactive.button_reply.title || b.id === buttonId);
+
+                    if (button) {
+                        nextStepId = button.nextStepId;
+                        // Save choice if configured
+                        if (button.fieldToSave && button.valueToSave !== undefined) {
+                            const leadNurtureService = require('./leadNurtureService');
+                            await leadNurtureService.enrichLeadPreferences(lead.id, null, { [button.fieldToSave]: button.valueToSave }, { skipNotification: true });
+                        }
+                    }
+                }
+
+                // If no state or no valid button transition, check for keywords or set to start
+                if (!nextStepId) {
+                    const resetKeywords = ['hi', 'hello', 'start', 'menu', 'hey', 'help'];
+                    if (!currentStepId || resetKeywords.includes(userText.toLowerCase())) {
+                        nextStepId = chatbotConfig.startStepId || steps[0]?.id;
+                    } else {
+                        // If in middle of funnel but input isn't a button, try AI or stick to current
+                        nextStepId = currentStepId;
+                    }
+                }
+
+                if (nextStepId) {
+                    // Update current step
+                    await prisma.lead.update({
+                        where: { id: lead.id },
+                        data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
+                    });
+
+                    const nextStep = steps.find(s => s.id === nextStepId);
+                    if (nextStep) {
+                        return await this.executeBotStep(nextStep, { lead, phoneNumberId, from, accessToken, businessName });
+                    }
                 }
             }
 
-            // Enrich lead preferences using Unified Automation Hub logic
+            // 🧠 FALLBACK TO AI LOGIC (Existing logic)
             const leadNurtureService = require('./leadNurtureService');
-            // skipNotification: true because whatsappService handles its own interactive reply below
             await leadNurtureService.enrichLeadPreferences(lead.id, userText, {}, { skipNotification: true });
 
-            // Re-fetch lead to get updated preferences for interaction logging
             const updatedLead = await prisma.lead.findUnique({ where: { id: lead.id } });
             const filters = updatedLead.preferences || {};
 
-            // Log interaction
-            await prisma.leadInteraction.create({
-                data: {
-                    tenantId,
-                    leadId: lead.id,
-                    type: 'CHAT_INIT',
-                    metadata: {
-                        platform: 'WHATSAPP',
-                        message: userText,
-                        filters
-                    }
-                }
-            });
-
-            // 2. Search properties if keywords detected or filters extracted
-            const propertyKeywords = ['property', 'properties', 'house', 'home', 'apartment', 'villa', 'flat', 'show', 'looking', 'need', 'want', 'search'];
-            const isPropertySearch = propertyKeywords.some(k => userText.toLowerCase().includes(k)) || Object.keys(filters).length > 0;
+            const propertyKeywords = ['property', 'properties', 'house', 'home', 'apartment', 'villa', 'flat', 'search'];
+            const isPropertySearch = propertyKeywords.some(k => userText.toLowerCase().includes(k)) || Object.keys(filters).length > 1; // More than just stepId
 
             if (isPropertySearch) {
                 const properties = await propertyService.searchProperties(filters, tenantId);
-
                 if (properties.length > 0) {
-                    await this.sendTextMessage({
-                        phoneNumberId,
-                        to: from,
-                        text: `I found ${properties.length} properties matching your needs! 🏠✨`,
-                        accessToken
-                    });
-
-                    for (const prop of properties) {
-                        const formattedMsg = propertyService.formatPropertyMessage(prop);
-                        await this.sendTextMessage({
-                            phoneNumberId,
-                            to: from,
-                            text: formattedMsg,
-                            accessToken
-                        });
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `I found ${properties.length} matches! 🏠✨`, accessToken });
+                    for (const prop of properties.slice(0, 3)) {
+                        await this.sendTextMessage({ phoneNumberId, to: from, text: propertyService.formatPropertyMessage(prop), accessToken });
                     }
-
-                    // Send call to action buttons
                     await this.sendButtonsMessage({
-                        phoneNumberId,
-                        to: from,
-                        text: "Would you like to speak with an agent or see more options?",
-                        buttons: [
-                            { id: 'talk_agent', title: "Talk to Agent" },
-                            { id: 'more_props', title: "Show More" }
-                        ],
+                        phoneNumberId, to: from, text: "Would you like more options?",
+                        buttons: [{ id: 'talk_agent', title: "Talk to Agent" }, { id: 'more_props', title: "Show More" }],
                         accessToken
                     });
                 } else {
-                    const noResMsg = aiService.getNoResultsMessage(filters, { businessName });
-                    await this.sendTextMessage({
-                        phoneNumberId,
-                        to: from,
-                        text: noResMsg,
-                        accessToken
-                    });
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: aiService.getNoResultsMessage(filters, { businessName }), accessToken });
                 }
             } else {
-                // 3. Simple AI Response for other queries
                 const aiResponse = await aiService.processMessage(userText, [], { businessName });
-                await this.sendTextMessage({
-                    phoneNumberId,
-                    to: from,
-                    text: aiResponse,
-                    accessToken
-                });
+                await this.sendTextMessage({ phoneNumberId, to: from, text: aiResponse, accessToken });
             }
 
             return { success: true };
@@ -409,6 +384,47 @@ class WhatsAppService {
             console.error('Handle incoming message error:', error);
             return { success: false };
         }
+    }
+
+    /**
+     * Helper to execute a single step of the funnel
+     */
+    async executeBotStep(step, context) {
+        const { from, phoneNumberId, accessToken, businessName, lead } = context;
+
+        if (step.type === 'question' && step.buttons?.length > 0) {
+            return await this.sendButtonsMessage({
+                phoneNumberId,
+                to: from,
+                text: step.content,
+                buttons: step.buttons.map(b => ({ title: b.label })),
+                accessToken
+            });
+        } else if (step.type === 'message') {
+            await this.sendTextMessage({ phoneNumberId, to: from, text: step.content, accessToken });
+            // If message has buttons but not a question, still send them
+            if (step.buttons?.length > 0) {
+                return await this.sendButtonsMessage({
+                    phoneNumberId, to: from, text: "Please choose an option:",
+                    buttons: step.buttons.map(b => ({ title: b.label })),
+                    accessToken
+                });
+            }
+        } else if (step.type === 'action') {
+            if (step.actionType === 'SEARCH_PROPERTIES') {
+                const filters = lead.preferences || {};
+                const properties = await propertyService.searchProperties(filters, lead.tenantId);
+                if (properties.length > 0) {
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `Matching properties for you:`, accessToken });
+                    for (const prop of properties.slice(0, 3)) {
+                        await this.sendTextMessage({ phoneNumberId, to: from, text: propertyService.formatPropertyMessage(prop), accessToken });
+                    }
+                } else {
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: aiService.getNoResultsMessage(filters, { businessName }), accessToken });
+                }
+            }
+        }
+        return { success: true };
     }
 
     /**

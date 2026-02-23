@@ -60,6 +60,7 @@ model Tenant {
   whatsappCampaigns     WhatsAppCampaign[]
   whatsappMessages      WhatsAppMessage[]
   whatsappTemplates     WhatsAppTemplate[]
+  whatsappChatbot       WhatsAppChatbot?
   widgets               Widget[]
   workflowLogs          WorkflowLog[]
 
@@ -1048,4 +1049,18 @@ enum PostStatus {
   POSTED
   FAILED
   CANCELLED
+}
+
+model WhatsAppChatbot {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @unique @map("tenant_id") @db.Uuid
+  isActive    Boolean  @default(true) @map("is_active")
+  steps       Json     @default("[]") // [{ id, type, content, buttons: [{ label, nextStepId, valueToSave, fieldToSave }] }]
+  startStepId String?  @map("start_step_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("whatsapp_chatbots")
 }

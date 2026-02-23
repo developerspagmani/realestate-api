@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const whatsappController = require('../../controllers/social/whatsappController');
+const whatsappChatbotController = require('../../controllers/social/whatsappChatbotController');
 
 const { auth } = require('../../middleware/auth');
 
@@ -9,12 +10,16 @@ router.use((req, res, next) => {
     // Exclude webhook routes from authentication
     // Convert to string and handle potential trailing slashes
     const path = req.path.toLowerCase();
-    if (path === '/webhook' || path === '/webhook/') {
+    if (path === '/webhook' || path === '/webhook/' || path.startsWith('/webhook/')) {
         return next();
     }
 
     auth(req, res, next);
 });
+
+// Chatbot Configuration
+router.get('/bot-config', whatsappChatbotController.getBotConfig);
+router.put('/bot-config', whatsappChatbotController.updateBotConfig);
 
 // Templates
 router.get('/templates', whatsappController.getTemplates);
