@@ -8,34 +8,43 @@ const whatsappService = require('./whatsappService');
  * Handles Lead Matching, Nurturing, and Omni-channel notifications
  */
 class LeadNurtureService {
-    /**
-     * Process a new lead or an updated lead message to extract preferences
-     * (Called by Webhook handlers or Form submission controllers)
-     */
-    async enrichLeadPreferences(leadId, messageText) {
+    async enrichLeadPreferences(leadId, messageText, structuredData = {}) {
         try {
             const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-            if (!lead || !messageText) return;
+            if (!lead) return;
 
-            // Extract filters using AI Service
-            const extractedFilters = await aiService.extractFilters(messageText);
+            let extractedFilters = {};
+            if (messageText) {
+                // Extract filters using AI Service
+                extractedFilters = await aiService.extractFilters(messageText);
+            }
 
-            if (Object.keys(extractedFilters).length > 0) {
+            // Combine with structured data (manual inputs from CRM)
+            const combinedFilters = {
+                ...extractedFilters,
+                ...(structuredData.budget ? { maxPrice: Number(structuredData.budget) } : {}),
+                ...(structuredData.location ? { location: structuredData.location } : {}),
+                ...(structuredData.propertyType ? { propertyType: structuredData.propertyType } : {}),
+                ...(structuredData.bedrooms ? { bedrooms: Number(structuredData.bedrooms) } : {})
+            };
+
+            if (Object.keys(combinedFilters).length > 0) {
                 const currentPrefs = lead.preferences || {};
                 await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
                         preferences: {
                             ...currentPrefs,
-                            ...extractedFilters,
+                            ...combinedFilters,
                             isWaitingForMatch: true, // Mark as waiting
                             lastInteractionAt: new Date()
                         },
-                        budget: extractedFilters.maxPrice ? extractedFilters.maxPrice : lead.budget
+                        // Sync budget if not set
+                        budget: combinedFilters.maxPrice && !lead.budget ? combinedFilters.maxPrice : lead.budget
                     }
                 });
 
-                console.log(`[LeadNurture] Enriched lead ${lead.id} with preferences:`, extractedFilters);
+                console.log(`[LeadNurture] Enriched lead ${lead.id} with preferences:`, combinedFilters);
 
                 // Immediately check if anything exists now
                 await this.checkMatchesForLead(lead.id);

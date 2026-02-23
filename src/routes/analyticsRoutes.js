@@ -12,5 +12,6 @@ router.get('/revenue-funnel', analyticsController.getRevenueAndLeads);
 router.get('/agent-performance', analyticsController.getAgentPerformance);
 router.get('/search-trends', analyticsController.getSearchTrends);
 router.get('/campaign-stats', analyticsController.getCampaignPerformance);
+router.get('/marketing-insights', analyticsController.getMarketingInsights);
 
 module.exports = router;

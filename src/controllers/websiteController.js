@@ -365,6 +365,14 @@ const websiteController = {
                 });
             }
 
+            // Sync with PropMatch Engine
+            try {
+                const leadNurtureService = require('../services/social/leadNurtureService');
+                await leadNurtureService.enrichLeadPreferences(lead.id, notes || `Website inquiry`, { budget: lead.budget });
+            } catch (err) {
+                console.error('Error enriching lead via website:', err);
+            }
+
             // Record the interaction and update lead score
             const interactionType = isBooking ? 'BOOKING_REQUEST' : (source === 'website_chatbot' ? 'CHAT_INIT' : 'FORM_SUBMIT');
             const scoreWeight = interactionType === 'CHAT_INIT' ? 10 : (isBooking ? 30 : 20);
@@ -396,6 +404,15 @@ const websiteController = {
                     }
                 });
             });
+
+            // Trigger workflows
+            try {
+                const WorkflowService = require('../services/marketing/WorkflowService');
+                const triggerType = isBooking ? 'LEAD_CREATED' : 'FORM_SUBMITTED';
+                await WorkflowService.triggerWorkflows(website.tenantId, lead.id, triggerType, { websiteId: website.id });
+            } catch (wfError) {
+                console.error('Error triggering website workflows:', wfError);
+            }
 
             res.status(201).json({ success: true, data: lead });
         } catch (error) {

@@ -85,7 +85,7 @@ const widgetController = {
                     configuration,
                     uniqueId,
                     tenantId: finalTenantId,
-                    propertyId
+                    propertyId: propertyId === 'global' ? null : propertyId
                 }
             });
 
@@ -117,7 +117,7 @@ const widgetController = {
                     type,
                     configuration,
                     status,
-                    propertyId
+                    propertyId: propertyId === 'global' ? null : propertyId
                 }
             });
 
@@ -352,7 +352,7 @@ const widgetController = {
             if (notes || name) {
                 try {
                     const leadNurtureService = require('../services/social/leadNurtureService');
-                    await leadNurtureService.enrichLeadPreferences(lead.id, notes || `Inquiry from ${name}`);
+                    await leadNurtureService.enrichLeadPreferences(lead.id, notes || `Inquiry from ${name}`, { budget: lead.budget });
                 } catch (err) {
                     console.error('Error enriching lead via widget:', err);
                 }

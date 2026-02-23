@@ -702,6 +702,31 @@ const getPhoneInfo = async (req, res) => {
     }
 };
 
+/**
+ * Get Webhook Info
+ * @route GET /api/social/whatsapp/webhook/info
+ */
+const getWebhookInfo = async (req, res) => {
+    try {
+        const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+        const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'realestate_marketing_whatsapp_token_2024';
+
+        res.status(200).json({
+            success: true,
+            data: {
+                callbackUrl: `${BACKEND_URL}/api/social/whatsapp/webhook`,
+                verifyToken: VERIFY_TOKEN
+            }
+        });
+    } catch (error) {
+        console.error('Get webhook info error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error fetching webhook info'
+        });
+    }
+};
+
 module.exports = {
     syncTemplates,
     getTemplates,
@@ -719,5 +744,6 @@ module.exports = {
     handleWebhook,
     verifyWebhook,
     getBusinessInfo,
-    getPhoneInfo
+    getPhoneInfo,
+    getWebhookInfo
 };

@@ -39,7 +39,8 @@ router.post('/messages', whatsappController.sendMessage);
 router.get('/business/:wabaId', whatsappController.getBusinessInfo);
 router.get('/phone/:phoneId', whatsappController.getPhoneInfo);
 
-// Webhook (no authentication required for webhook endpoints)
+// Webhook (no authentication required for internal verification, but management needs auth)
+router.get('/webhook/info', whatsappController.getWebhookInfo);
 router.get('/webhook', whatsappController.verifyWebhook);
 router.post('/webhook', whatsappController.handleWebhook);
 

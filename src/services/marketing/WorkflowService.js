@@ -5,22 +5,32 @@ class WorkflowService {
      * Enroll a lead into a workflow
      */
     static async enrollLead(workflowId, leadId) {
+        console.log(`[WorkflowService] Enrolling lead ${leadId} into workflow ${workflowId}`);
         try {
             // Check if already enrolled
             const existing = await prisma.workflowEnrollment.findUnique({
                 where: { workflowId_leadId: { workflowId, leadId } }
             });
 
-            if (existing) return existing;
+            if (existing) {
+                console.log(`[WorkflowService] Lead ${leadId} already enrolled in workflow ${workflowId}`);
+                return existing;
+            }
 
             const workflow = await prisma.marketingWorkflow.findUnique({ where: { id: workflowId } });
-            if (!workflow || workflow.status !== 1) return null;
+            if (!workflow || workflow.status !== 1) {
+                console.log(`[WorkflowService] Workflow ${workflowId} not found or inactive`);
+                return null;
+            }
 
             // Find start node
             const steps = typeof workflow.steps === 'string' ? JSON.parse(workflow.steps) : workflow.steps;
-            const startStep = steps.find(s => s.type === 'START') || steps[0];
+            console.log(`[WorkflowService] Workflow has ${steps?.length || 0} steps`);
 
-            return await prisma.workflowEnrollment.create({
+            const startStep = steps.find(s => s.type === 'START') || (steps && steps.length > 0 ? steps[0] : null);
+            console.log(`[WorkflowService] Start step ID: ${startStep?.id}`);
+
+            const enrollment = await prisma.workflowEnrollment.create({
                 data: {
                     workflowId,
                     leadId,
@@ -29,6 +39,8 @@ class WorkflowService {
                     nextActionAt: new Date() // Process immediately
                 }
             });
+            console.log(`[WorkflowService] Successfully enrolled lead ${leadId}. Enrollment ID: ${enrollment.id}`);
+            return enrollment;
         } catch (error) {
             console.error('Enroll lead error:', error);
             return null;
@@ -39,20 +51,52 @@ class WorkflowService {
      * Trigger workflows for a lead based on an event
      */
     static async triggerWorkflows(tenantId, leadId, triggerType, metadata = {}) {
+        console.log(`[WorkflowService] Triggering ${triggerType} for lead ${leadId} in tenant ${tenantId}`);
         try {
             const workflows = await prisma.marketingWorkflow.findMany({
                 where: { tenantId, status: 1 }
             });
 
+            console.log(`[WorkflowService] Found ${workflows.length} active workflows for tenant`);
+
             for (const wf of workflows) {
                 const trigger = typeof wf.trigger === 'string' ? JSON.parse(wf.trigger) : wf.trigger;
-                if (!trigger || trigger.type !== triggerType) continue;
+                if (!trigger) continue;
+
+                console.log(`[WorkflowService] Checking workflow "${wf.name}" with trigger:`, trigger);
+
+                // Normalization mapping
+                const triggerMapping = {
+                    'New Lead': 'LEAD_CREATED',
+                    'LEAD_CREATED': 'LEAD_CREATED',
+                    'Status Changed': 'STATUS_CHANGED',
+                    'STATUS_CHANGED': 'STATUS_CHANGED',
+                    'Match Found': 'MATCH_FOUND',
+                    'MATCH_FOUND': 'MATCH_FOUND',
+                    'Property Added': 'PROPERTY_ADDED',
+                    'PROPERTY_ADDED': 'PROPERTY_ADDED'
+                };
+
+                const workflowTriggerType = triggerMapping[trigger.type] || trigger.type;
+                const incomingTriggerType = triggerMapping[triggerType] || triggerType;
+
+                if (workflowTriggerType !== incomingTriggerType) continue;
 
                 // Additional logic for specific triggers
-                if (triggerType === 'FORM_SUBMITTED' && trigger.formId && trigger.formId !== metadata.formId) continue;
-                if (triggerType === 'STATUS_CHANGED' && trigger.status && parseInt(trigger.status) !== parseInt(metadata.newStatus)) continue;
-                if (triggerType === 'TAG_ADDED' && trigger.tag && trigger.tag !== metadata.tag) continue;
+                if (incomingTriggerType === 'FORM_SUBMITTED' && trigger.formId && trigger.formId !== metadata.formId) {
+                    console.log(`[WorkflowService] Form ID mismatch: ${trigger.formId} vs ${metadata.formId}`);
+                    continue;
+                }
+                if (incomingTriggerType === 'STATUS_CHANGED' && trigger.status && parseInt(trigger.status) !== parseInt(metadata.newStatus)) {
+                    console.log(`[WorkflowService] Status mismatch: ${trigger.status} vs ${metadata.newStatus}`);
+                    continue;
+                }
+                if (incomingTriggerType === 'TAG_ADDED' && trigger.tag && trigger.tag !== metadata.tag) {
+                    console.log(`[WorkflowService] Tag mismatch: ${trigger.tag} vs ${metadata.tag}`);
+                    continue;
+                }
 
+                console.log(`[WorkflowService] Enrolling lead ${leadId} into workflow "${wf.name}"`);
                 await this.enrollLead(wf.id, leadId);
             }
         } catch (error) {

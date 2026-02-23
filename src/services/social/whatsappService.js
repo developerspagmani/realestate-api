@@ -315,6 +315,14 @@ class WhatsAppService {
                         notes: `Original sender: ${from}`
                     }
                 });
+
+                // Trigger LEAD_CREATED workflow
+                try {
+                    const WorkflowService = require('../marketing/WorkflowService');
+                    await WorkflowService.triggerWorkflows(tenantId, lead.id, 'LEAD_CREATED');
+                } catch (wfError) {
+                    console.error('Error triggering WhatsApp lead workflow:', wfError);
+                }
             }
 
             // Enrich lead preferences using Unified Automation Hub logic

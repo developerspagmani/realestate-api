@@ -105,6 +105,7 @@ const getAllLeads = async (req, res) => {
           budget: true,
           leadScore: true,
           notes: true,
+          userId: true,
           createdAt: true,
           updatedAt: true,
           unit: {
@@ -387,11 +388,9 @@ const createLead = async (req, res) => {
         }
       }
 
-      // Enrich lead preferences from message
+      // Enrich lead preferences (Try both AI extraction from message and structured budget)
       const leadNurtureService = require('../services/social/leadNurtureService');
-      if (lead.message) {
-        await leadNurtureService.enrichLeadPreferences(lead.id, lead.message);
-      }
+      await leadNurtureService.enrichLeadPreferences(lead.id, lead.message, { budget: lead.budget });
 
       // Trigger LEAD_CREATED workflows
       const WorkflowService = require('../services/marketing/WorkflowService');
@@ -817,6 +816,14 @@ const updateLead = async (req, res) => {
         }
       }
     });
+
+    // Re-evaluate matching preferences
+    try {
+      const leadNurtureService = require('../services/social/leadNurtureService');
+      await leadNurtureService.enrichLeadPreferences(lead.id, lead.message, { budget: lead.budget });
+    } catch (enrichError) {
+      console.error('Error re-enriching lead on update:', enrichError);
+    }
 
     res.status(200).json({
       success: true,

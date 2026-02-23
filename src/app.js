@@ -185,12 +185,19 @@ process.on('SIGINT', async () => {
 // Initialize background workers
 const scheduledPostsService = new ScheduledPostsService();
 
-// Run every minute
+// Run background tasks every minute
 cron.schedule('* * * * *', async () => {
   try {
+    // 1. Process Social Media Posts
     await scheduledPostsService.publishScheduledPosts();
+
+    // 2. Process Marketing Workflows
+    const WorkflowService = require('./services/marketing/WorkflowService');
+    await WorkflowService.processWorkflows();
+
+    console.log('[Cron] Background tasks processed successfully.');
   } catch (error) {
-    console.error('Error in scheduled posts cron:', error);
+    console.error('[Cron] Error in background tasks:', error);
   }
 });
 

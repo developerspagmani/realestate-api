@@ -54,16 +54,46 @@ const publicController = {
                     { neighborhood: { contains: search, mode: 'insensitive' } },
                     { city: { contains: search, mode: 'insensitive' } }
                 ];
+            }
 
-                // Async log search trend (Don't await to not block the request)
-                prisma.leadInteraction.create({
-                    data: {
-                        tenantId,
-                        leadId: '00000000-0000-0000-0000-000000000000', // System identifier for public search
-                        type: 'SEARCH',
-                        metadata: { keyword: search, city: city || 'Unknown' }
+            // Log search/filter interaction for analytics
+            if (search || city) {
+                try {
+                    // We need a valid leadId for the relation. Find or create a 'Public Visitor' system lead if not exists.
+                    let systemLead = await prisma.lead.findFirst({
+                        where: { tenantId, email: 'system@search.analytics' }
+                    });
+
+                    if (!systemLead) {
+                        systemLead = await prisma.lead.create({
+                            data: {
+                                tenantId,
+                                name: 'Public Search System',
+                                email: 'system@search.analytics',
+                                source: 6, // Other
+                                status: 1, // New
+                                notes: 'System lead for tracking public searches'
+                            }
+                        });
                     }
-                }).catch(e => console.error('Failed to log search trend:', e));
+
+                    await prisma.leadInteraction.create({
+                        data: {
+                            tenantId,
+                            leadId: systemLead.id,
+                            type: 'SEARCH',
+                            metadata: {
+                                keyword: search || 'All',
+                                city: city || 'Unknown',
+                                filters: { propertyType, minPrice, maxPrice, bedrooms, bathrooms, listingType },
+                                date: new Date()
+                            },
+                            scoreWeight: 0
+                        }
+                    });
+                } catch (err) {
+                    console.error('Search interaction logging failed:', err);
+                }
             }
 
             const [properties, total] = await Promise.all([

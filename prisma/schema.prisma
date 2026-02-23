@@ -8,70 +8,60 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// Multi-tenant architecture
 model Tenant {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  type      Int      // 1: Real Estate, 2: Co-working, 3: Mixed
-  domain    String?  @unique
-  website   String?
-  address   String?
-  city      String?
-  state     String?
-  country   String?
-  postalCode String? @map("postal_code")
-  status    Int      @default(1) // 1: active, 2: inactive, 3: suspended
-  planId    String?  @db.Uuid @map("plan_id")
-  subscriptionStatus Int @default(1) // 1: Active, 2: Expired, 3: Trial
-  subscriptionExpiresAt DateTime? @map("subscription_expires_at")
-  settings  Json?    @default("{}")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  plan      Plan?    @relation(fields: [planId], references: [id])
-  licenseKey LicenseKey?
-  users     User[]
-  properties Property[]
-  units     Unit[]
-  bookings  Booking[]
-  listings  Listing[]
-  leads     Lead[]
-  userPropertyAccess UserPropertyAccess[]
-  auditLogs AuditLog[]
-  media     Media[]
-  tenantModules TenantModule[]
-  widgets   Widget[]
-  amenities Amenity[]
-  agents    Agent[]
-  
-  // Marketing Module
-  emailTemplates    EmailTemplate[]
-  audienceGroups    AudienceGroup[]
-  campaigns         Campaign[]
-  marketingWorkflows MarketingWorkflow[]
-  formBuilders      FormBuilder[]
-  propertyCategories PropertyCategory[]
-  
-  // Isolated Tracking
-  payments          Payment[]
-  commissions       Commission[]
-  campaignLogs      CampaignLog[]
-  workflowLogs      WorkflowLog[]
-  leadInteractions  LeadInteraction[]
-  websites          Website[]
-  pages             Page[]
-  upgradeRequests   PlanUpgradeRequest[]
-  integrations      Integration[]
-
-  // Social Media Module
-  connectedAccounts ConnectedAccount[]
-  scheduledPosts    ScheduledPost[]
-  publishedPosts    PublishedPost[]
-  whatsappTemplates WhatsAppTemplate[]
-  whatsappCampaigns WhatsAppCampaign[]
-  whatsappMessages  WhatsAppMessage[]
-
+  id                    String               @id @default(uuid()) @db.Uuid
+  name                  String
+  type                  Int
+  domain                String?              @unique
+  status                Int                  @default(1)
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  address               String?
+  city                  String?
+  country               String?
+  postalCode            String?              @map("postal_code")
+  state                 String?
+  website               String?
+  settings              Json?                @default("{}")
+  planId                String?              @map("plan_id") @db.Uuid
+  subscriptionStatus    Int                  @default(1)
+  subscriptionExpiresAt DateTime?            @map("subscription_expires_at")
+  agents                Agent[]
+  amenities             Amenity[]
+  audienceGroups        AudienceGroup[]
+  auditLogs             AuditLog[]
+  bookings              Booking[]
+  campaignLogs          CampaignLog[]
+  campaigns             Campaign[]
+  commissions           Commission[]
+  connectedAccounts     ConnectedAccount[]
+  emailTemplates        EmailTemplate[]
+  formBuilders          FormBuilder[]
+  integrations          Integration[]
+  leadInteractions      LeadInteraction[]
+  leads                 Lead[]
+  licenseKey            LicenseKey?
+  listings              Listing[]
+  marketingWorkflows    MarketingWorkflow[]
+  media                 Media[]
+  pages                 Page[]
+  payments              Payment[]
+  upgradeRequests       PlanUpgradeRequest[]
+  properties            Property[]
+  propertyCategories    PropertyCategory[]
+  publishedPosts        PublishedPost[]
+  scheduledPosts        ScheduledPost[]
+  tenantModules         TenantModule[]
+  plan                  Plan?                @relation(fields: [planId], references: [id])
+  units                 Unit[]
+  userPropertyAccess    UserPropertyAccess[]
+  users                 User[]
+  websites              Website[]
+  whatsappCampaigns     WhatsAppCampaign[]
+  whatsappMessages      WhatsAppMessage[]
+  whatsappTemplates     WhatsAppTemplate[]
+  widgets               Widget[]
+  workflowLogs          WorkflowLog[]
 
   @@map("tenants")
 }
@@ -80,7 +70,7 @@ model SystemSetting {
   id        String   @id @default(uuid()) @db.Uuid
   key       String   @unique
   value     String
-  type      String   @default("string") // string, number, boolean, json
+  type      String   @default("string")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -88,88 +78,80 @@ model SystemSetting {
 }
 
 model Plan {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String
-  slug        String   @unique
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  interval    String   @default("yearly") // yearly, monthly
-  status      Int      @default(1) // 1: active, 2: inactive
-  features    Json?    @default("{}") // e.g. { "maxProperties": 10, "3dEnabled": true }
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenants         Tenant[]
+  id              String               @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String               @unique
+  description     String?
+  price           Decimal              @db.Decimal(10, 2)
+  interval        String               @default("yearly")
+  status          Int                  @default(1)
+  features        Json?                @default("{}")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
   licenseKeys     LicenseKey[]
-  modules         Module[]
   upgradeRequests PlanUpgradeRequest[]
+  tenants         Tenant[]
+  modules         Module[]             @relation("ModuleToPlan")
 
   @@map("plans")
 }
 
 model LicenseKey {
-  id          String   @id @default(uuid()) @db.Uuid
-  key         String   @unique
-  planId      String   @db.Uuid @map("plan_id")
-  status      Int      @default(1) // 1: unused, 2: used, 3: void
-  tenantId    String?  @unique @db.Uuid @map("tenant_id")
+  id          String    @id @default(uuid()) @db.Uuid
+  key         String    @unique
+  planId      String    @map("plan_id") @db.Uuid
+  status      Int       @default(1)
+  tenantId    String?   @unique @map("tenant_id") @db.Uuid
   activatedAt DateTime? @map("activated_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  plan        Plan     @relation(fields: [planId], references: [id])
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
-  userId      String?  @db.Uuid @map("user_id")
-  user        User?    @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  userId      String?   @map("user_id") @db.Uuid
+  plan        Plan      @relation(fields: [planId], references: [id])
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
 
   @@map("license_keys")
 }
 
-
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String?  @db.Uuid @map("tenant_id")
-  firstName    String?  @map("first_name")
-  lastName     String?  @map("last_name")
-  name         String?
-  email        String   @unique
-  phone        String?
-  companyName  String?  @map("company_name")
-  website      String?
-  addressLine1 String?  @map("address_line1")
-  addressLine2 String?  @map("address_line2")
-  city         String?
-  state        String?
-  country      String?
-  zipCode      String?  @map("zipcode")
-  passwordHash String?  @map("password_hash")
-  role         Int?     // 1: user, 2: admin, 3: owner
-  activationToken String?  @map("activation_token")
-  isVerified   Boolean  @default(false) @map("is_verified")
-  status       Int      @default(2) // 1: active, 2: inactive (pending verification), 3: suspended
-  resetPasswordToken String?  @map("reset_password_token")
-  resetPasswordExpires DateTime? @map("reset_password_expires")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  bookings     Booking[]
-  userPropertyAccess UserPropertyAccess[]
-  auditLogs    AuditLog[]
-  media        Media[]
-  leads        Lead[]
-  payments     Payment[]
-  agent        Agent?
-  licenseKeys  LicenseKey[]
-  planUpgradeRequests PlanUpgradeRequest[]
-
-  // Social Media Module
-  connectedAccounts ConnectedAccount[]
-  scheduledPosts    ScheduledPost[]
-  publishedPosts    PublishedPost[]
-  whatsappCampaigns WhatsAppCampaign[]
-
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String?              @map("tenant_id") @db.Uuid
+  name                 String?
+  email                String               @unique
+  phone                String?
+  passwordHash         String?              @map("password_hash")
+  role                 Int?
+  status               Int                  @default(2)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  activationToken      String?              @map("activation_token")
+  addressLine1         String?              @map("address_line1")
+  addressLine2         String?              @map("address_line2")
+  city                 String?
+  companyName          String?              @map("company_name")
+  country              String?
+  firstName            String?              @map("first_name")
+  isVerified           Boolean              @default(false) @map("is_verified")
+  lastName             String?              @map("last_name")
+  resetPasswordExpires DateTime?            @map("reset_password_expires")
+  resetPasswordToken   String?              @map("reset_password_token")
+  state                String?
+  website              String?
+  zipCode              String?              @map("zipcode")
+  agent                Agent?
+  auditLogs            AuditLog[]
+  bookings             Booking[]
+  connectedAccounts    ConnectedAccount[]
+  leads                Lead[]
+  licenseKeys          LicenseKey[]
+  media                Media[]
+  payments             Payment[]
+  planUpgradeRequests  PlanUpgradeRequest[]
+  publishedPosts       PublishedPost[]
+  scheduledPosts       ScheduledPost[]
+  userPropertyAccess   UserPropertyAccess[]
+  tenant               Tenant?              @relation(fields: [tenantId], references: [id])
+  whatsappCampaigns    WhatsAppCampaign[]
 
   @@index([tenantId])
   @@index([phone])
@@ -177,133 +159,117 @@ model User {
 }
 
 model Property {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String?  @db.Uuid @map("tenant_id")
-  propertyType Int?     @map("property_type") // 1: residential, 2: commercial, 3: industrial, 4: mixed
-  categoryId   String?  @db.Uuid @map("category_id") // Reference to PropertyCategory
-  title        String?
-  slug         String?  @unique
-  description  String?
-  addressLine1 String?  @map("address_line1")
-  addressLine2 String?  @map("address_line2")
-  city         String?
-  state        String?
-  country      String?
-  postalCode   String?  @map("postal_code")
-  latitude     Decimal? @db.Decimal(10, 7)
-  longitude    Decimal? @db.Decimal(10, 7)
-  videoUrl     String?  @map("video_url") // YouTube video URL
-  status       Int      @default(1) // 1: active, 2: inactive, 3: archived
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  // New fields
-  mainImageId  String?  @db.Uuid @map("main_image_id")
-  gallery      Json?    // Array of Media IDs or Objects
-  area         Int?     @map("area") // Sqft/Sqm
-  floorPlanId  String?  @db.Uuid @map("floor_plan_id")
-  brochureId   String?  @db.Uuid @map("brochure_id")
-  yearBuilt    Int?     @map("year_built")
-  neighborhood String?
-  parkingSpaces Int?    @map("parking_spaces")
-  bedrooms     Int?
-  bathrooms    Int?
-  price        Decimal? @db.Decimal(15, 2)
-  lotSize      Int?     @map("lot_size")
-  listingType  String?  @default("Rent") @map("listing_type")
-
-  // Relations
-  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  category     PropertyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  mainImage    Media?   @relation("PropertyMainImage", fields: [mainImageId], references: [id])
-  floorPlan    Media?   @relation("PropertyFloorPlan", fields: [floorPlanId], references: [id])
-  brochure     Media?   @relation("PropertyBrochure", fields: [brochureId], references: [id])
-  propertyAmenities PropertyAmenity[]
-  units        Unit[]
-  leads        Lead[]
-  bookings     Booking[]
+  id                 String               @id @default(uuid()) @db.Uuid
+  tenantId           String?              @map("tenant_id") @db.Uuid
+  propertyType       Int?                 @map("property_type")
+  title              String?
+  description        String?
+  addressLine1       String?              @map("address_line1")
+  addressLine2       String?              @map("address_line2")
+  city               String?
+  state              String?
+  country            String?
+  postalCode         String?              @map("postal_code")
+  latitude           Decimal?             @db.Decimal(10, 7)
+  longitude          Decimal?             @db.Decimal(10, 7)
+  status             Int                  @default(1)
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  gallery            Json?
+  mainImageId        String?              @map("main_image_id") @db.Uuid
+  slug               String?              @unique
+  area               Int?                 @map("area")
+  bathrooms          Int?
+  bedrooms           Int?
+  brochureId         String?              @map("brochure_id") @db.Uuid
+  floorPlanId        String?              @map("floor_plan_id") @db.Uuid
+  listingType        String?              @default("Rent") @map("listing_type")
+  lotSize            Int?                 @map("lot_size")
+  neighborhood       String?
+  parkingSpaces      Int?                 @map("parking_spaces")
+  yearBuilt          Int?                 @map("year_built")
+  categoryId         String?              @map("category_id") @db.Uuid
+  metadata           Json?                @default("{}")
+  videoUrl           String?              @map("video_url")
+  price              Decimal?             @db.Decimal(15, 2)
+  agentProperties    AgentProperty[]
+  bookings           Booking[]
+  leads              Lead[]
+  brochure           Media?               @relation("PropertyBrochure", fields: [brochureId], references: [id])
+  category           PropertyCategory?    @relation(fields: [categoryId], references: [id])
+  floorPlan          Media?               @relation("PropertyFloorPlan", fields: [floorPlanId], references: [id])
+  mainImage          Media?               @relation("PropertyMainImage", fields: [mainImageId], references: [id])
+  tenant             Tenant?              @relation(fields: [tenantId], references: [id])
+  workspace3D        Property3DConfig?
+  propertyAmenities  PropertyAmenity[]
+  scheduledPosts     ScheduledPost[]
+  units              Unit[]
   userPropertyAccess UserPropertyAccess[]
-
-  workspace3D  Property3DConfig?
-  widgets      Widget[]
-  agentProperties AgentProperty[]
-  metadata        Json?    @default("{}")
-  websites        Website[]
-
-  // Social Media Module
-  scheduledPosts  ScheduledPost[]
-
+  websites           Website[]
+  widgets            Widget[]
 
   @@index([tenantId])
   @@index([categoryId])
   @@map("properties")
 }
 
-// Property Categories for organizing properties
 model PropertyCategory {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String?  @db.Uuid @map("tenant_id")
+  id          String             @id @default(uuid()) @db.Uuid
+  tenantId    String?            @map("tenant_id") @db.Uuid
   name        String
   slug        String?
   description String?
-  icon        String?  @default("bi-folder")
-  parentId    String?  @db.Uuid @map("parent_id")
-  sortOrder   Int      @default(0) @map("sort_order")
-  status      Int      @default(1) // 1: active, 2: inactive
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  parent      PropertyCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children    PropertyCategory[] @relation("CategoryHierarchy")
+  icon        String?            @default("bi-folder")
+  parentId    String?            @map("parent_id") @db.Uuid
+  sortOrder   Int                @default(0) @map("sort_order")
+  status      Int                @default(1)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
   properties  Property[]
+  parent      PropertyCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    PropertyCategory[] @relation("CategoryHierarchy")
+  tenant      Tenant?            @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("property_categories")
 }
 
 model PropertyAmenity {
-  propertyId String   @db.Uuid @map("property_id")
-  amenityId  String   @db.Uuid @map("amenity_id")
+  propertyId String   @map("property_id") @db.Uuid
+  amenityId  String   @map("amenity_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
-
-  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   amenity    Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@id([propertyId, amenityId])
   @@map("property_amenities")
 }
 
 model Unit {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String?  @db.Uuid @map("tenant_id")
-  propertyId   String?  @db.Uuid @map("property_id")
-  unitCategory Int      @map("unit_category") // 1: residential, 2: commercial, 3: industrial, 4: mixed
-  unitCode     String?  @map("unit_code")
-  slug         String?  @unique
-  floorNo      Int?     @map("floor_no")
-  capacity     Int?
-  sizeSqft     Int?     @map("size_sqft")
-  status       Int      @default(1) // 1: available, 2: occupied, 3: maintenance, 4: inactive
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  metadata     Json?    @default("{}")
-
-  // New fields
-  mainImageId  String?  @db.Uuid @map("main_image_id")
-  gallery      Json?    // Array of Media IDs or Objects
-
-  // Relations
-  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  property     Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  mainImage    Media?    @relation("UnitMainImage", fields: [mainImageId], references: [id])
-  unitPricing  UnitPricing[]
+  id                String                 @id @default(uuid()) @db.Uuid
+  tenantId          String?                @map("tenant_id") @db.Uuid
+  propertyId        String?                @map("property_id") @db.Uuid
+  unitCategory      Int                    @map("unit_category")
+  unitCode          String?                @map("unit_code")
+  floorNo           Int?                   @map("floor_no")
+  capacity          Int?
+  sizeSqft          Int?                   @map("size_sqft")
+  status            Int                    @default(1)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  gallery           Json?
+  mainImageId       String?                @map("main_image_id") @db.Uuid
+  slug              String?                @unique
+  metadata          Json?                  @default("{}")
+  bookings          Booking[]
+  leads             Lead[]
+  listings          Listing[]
   realEstateDetails RealEstateUnitDetails?
-  unitAmenities UnitAmenity[]
-  bookings     Booking[]
-  listings     Listing[]
-  leads        Lead[]
+  unitAmenities     UnitAmenity[]
+  unitPricing       UnitPricing[]
+  mainImage         Media?                 @relation("UnitMainImage", fields: [mainImageId], references: [id])
+  property          Property?              @relation(fields: [propertyId], references: [id])
+  tenant            Tenant?                @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([propertyId])
@@ -312,95 +278,83 @@ model Unit {
 
 model UnitPricing {
   id           String   @id @default(uuid()) @db.Uuid
-  unitId       String?  @db.Uuid @map("unit_id")
-  pricingModel Int?     @map("pricing_model") // 1: fixed, 2: hourly, 3: daily, 4: monthly, 5: yearly
+  unitId       String?  @map("unit_id") @db.Uuid
+  pricingModel Int?     @map("pricing_model")
   price        Decimal? @db.Decimal(15, 2)
   currency     String?
   createdAt    DateTime @default(now()) @map("created_at")
-
-  // Relations
-  unit         Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  unit         Unit?    @relation(fields: [unitId], references: [id])
 
   @@map("unit_pricing")
 }
 
 model RealEstateUnitDetails {
-  unitId       String   @db.Uuid @map("unit_id")
+  unitId       String @id @map("unit_id") @db.Uuid
   bedrooms     Int?
   bathrooms    Int?
-  furnishing   Int?     // 1: unfurnished, 2: semi-furnished, 3: fully furnished
-  parkingSlots Int?    @map("parking_slots")
-  facing      Int?     // 1: north, 2: south, 3: east, 4: west, 5: north-east, 6: north-west, 7: south-east, 8: south-west
+  furnishing   Int?
+  parkingSlots Int?   @map("parking_slots")
+  facing       Int?
+  unit         Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
-  // Relations
-  unit        Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@id([unitId])
   @@map("real_estate_unit_details")
 }
 
-
 model Amenity {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String?  @db.Uuid @map("tenant_id")
-  name      String?
-  category  Int?     // 1: facilities, 2: technology, 3: comfort, 4: safety, 5: other
-  icon      String?
-  status    Int      @default(1) // 1: active, 2: inactive
-  createdAt DateTime @default(now()) @map("created_at")
-
-  // Relations
-  tenant            Tenant?           @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  unitAmenities     UnitAmenity[]
+  id                String            @id @default(uuid()) @db.Uuid
+  name              String?
+  category          Int?
+  icon              String?
+  status            Int               @default(1)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  tenantId          String?           @map("tenant_id") @db.Uuid
+  tenant            Tenant?           @relation(fields: [tenantId], references: [id])
   propertyAmenities PropertyAmenity[]
+  unitAmenities     UnitAmenity[]
 
   @@map("amenities")
 }
 
 model UnitAmenity {
-  unitId     String   @db.Uuid @map("unit_id")
-  amenityId  String   @db.Uuid @map("amenity_id")
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  // Relations
-  unit       Unit?    @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  amenity    Amenity? @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  unitId    String   @map("unit_id") @db.Uuid
+  amenityId String   @map("amenity_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  amenity   Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@id([unitId, amenityId])
   @@map("unit_amenities")
 }
 
 model Booking {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String?  @db.Uuid @map("tenant_id")
-  propertyId      String?  @db.Uuid @map("property_id")
-  unitId          String?  @db.Uuid @map("unit_id")
-  userId          String?  @db.Uuid @map("user_id")
-  leadId          String?  @db.Uuid @map("lead_id")
-  agentId         String?  @db.Uuid @map("agent_id")
-  guestName       String?  @map("guest_name")
-  guestEmail      String?  @map("guest_email")
-  guestPhone      String?  @map("guest_phone")
-  startAt         DateTime @map("start_at")
-  endAt           DateTime @map("end_at")
-  status          Int      @default(1) // 1: pending, 2: confirmed, 3: cancelled, 4: completed, 5: no_show
-  totalPrice      Decimal? @db.Decimal(10, 2) @map("total_price")
-  paymentStatus   Int      @default(1) @map("payment_status") // 1: pending, 2: paid, 3: refunded
-  notes           String?  @db.Text
-  specialRequests String?  @db.Text @map("special_requests")
-  qrCode          String?  @db.Text @map("qr_code")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  property        Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  unit            Unit?    @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  lead            Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  payments        Payment[]
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String?      @map("tenant_id") @db.Uuid
+  unitId          String?      @map("unit_id") @db.Uuid
+  userId          String?      @map("user_id") @db.Uuid
+  startAt         DateTime     @map("start_at")
+  endAt           DateTime     @map("end_at")
+  status          Int          @default(1)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  notes           String?
+  paymentStatus   Int          @default(1) @map("payment_status")
+  qrCode          String?      @map("qr_code")
+  specialRequests String?      @map("special_requests")
+  totalPrice      Decimal?     @map("total_price") @db.Decimal(10, 2)
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  agentId         String?      @map("agent_id") @db.Uuid
+  guestEmail      String?      @map("guest_email")
+  guestName       String?      @map("guest_name")
+  guestPhone      String?      @map("guest_phone")
+  leadId          String?      @map("lead_id") @db.Uuid
+  propertyId      String?      @map("property_id") @db.Uuid
+  agent           Agent?       @relation(fields: [agentId], references: [id])
+  lead            Lead?        @relation(fields: [leadId], references: [id])
+  property        Property?    @relation(fields: [propertyId], references: [id])
+  tenant          Tenant?      @relation(fields: [tenantId], references: [id])
+  unit            Unit?        @relation(fields: [unitId], references: [id])
+  user            User?        @relation(fields: [userId], references: [id])
   commissions     Commission[]
+  payments        Payment[]
 
   @@index([tenantId])
   @@index([propertyId])
@@ -411,55 +365,51 @@ model Booking {
 }
 
 model Listing {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String?   @db.Uuid @map("tenant_id")
-  unitId        String?   @db.Uuid @map("unit_id")
-  slug          String?   @unique
-  isPublished   Boolean   @default(false) @map("is_published")
-  publishedAt   DateTime? @map("published_at")
-  seoTitle      String?   @map("seo_title")
-  seoDescription String?  @map("seo_description")
-
-  // Relations
-  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  unit          Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String?   @map("tenant_id") @db.Uuid
+  unitId         String?   @map("unit_id") @db.Uuid
+  slug           String?   @unique
+  isPublished    Boolean   @default(false) @map("is_published")
+  publishedAt    DateTime? @map("published_at")
+  seoTitle       String?   @map("seo_title")
+  seoDescription String?   @map("seo_description")
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id])
+  unit           Unit?     @relation(fields: [unitId], references: [id])
 
   @@map("listings")
 }
 
 model Lead {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String?   @db.Uuid @map("tenant_id")
-  unitId        String?   @db.Uuid @map("unit_id")
-  propertyId    String?   @db.Uuid @map("property_id")
-  userId        String?   @db.Uuid @map("user_id")
-  name          String?
-  email         String?
-  phone         String?
-  company       String?
-  message       String?
-  source        Int?      // 1: website, 2: email, 3: phone, 4: social, 5: referral, 6: other, 7: chatbot
-  status        Int       @default(1) // 1: new, 2: contacted, 3: qualified, 4: converted, 5: lost
-  priority      Int       @default(2) // 1: low, 2: medium, 3: high
-  budget        Decimal?  @db.Decimal(15, 2)
-  leadScore     Int       @default(0) @map("lead_score")
-  preferredDate DateTime? @map("preferred_date")
-  assignedAt    DateTime? @map("assigned_at")
-  notes         String?   @db.Text
-  preferences   Json?     @default("{}")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @default(now()) @map("updated_at")
-
-  // Relations
-  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  unit        Unit?     @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  property    Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  agentLeads  AgentLead[]
-  audienceGroups AudienceGroup[] @relation("LeadAudienceGroups")
-  interactions   LeadInteraction[]
-  enrollments    WorkflowEnrollment[]
+  id             String               @id @default(uuid()) @db.Uuid
+  tenantId       String?              @map("tenant_id") @db.Uuid
+  unitId         String?              @map("unit_id") @db.Uuid
+  propertyId     String?              @map("property_id") @db.Uuid
+  name           String?
+  email          String?
+  phone          String?
+  message        String?
+  source         Int?
+  createdAt      DateTime             @default(now()) @map("created_at")
+  budget         Decimal?             @db.Decimal(15, 2)
+  company        String?
+  notes          String?
+  preferredDate  DateTime?            @map("preferred_date")
+  priority       Int                  @default(2)
+  status         Int                  @default(1)
+  updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at")
+  userId         String?              @map("user_id") @db.Uuid
+  assignedAt     DateTime?            @map("assigned_at")
+  leadScore      Int                  @default(0) @map("lead_score")
+  preferences    Json?                @default("{}")
+  agentLeads     AgentLead[]
   bookings       Booking[]
+  interactions   LeadInteraction[]
+  property       Property?            @relation(fields: [propertyId], references: [id])
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id])
+  unit           Unit?                @relation(fields: [unitId], references: [id])
+  user           User?                @relation(fields: [userId], references: [id])
+  enrollments    WorkflowEnrollment[]
+  audienceGroups AudienceGroup[]      @relation("LeadAudienceGroups")
 
   @@index([tenantId])
   @@index([propertyId])
@@ -469,35 +419,33 @@ model Lead {
 }
 
 model WorkflowEnrollment {
-  id          String   @id @default(uuid()) @db.Uuid
-  workflowId  String   @db.Uuid @map("workflow_id")
-  leadId      String   @db.Uuid @map("lead_id")
-  currentStep String?  @map("current_step") // ID of the step in the JSON config
-  status      Int      @default(1) // 1: Active, 2: Completed, 3: Paused, 4: Cancelled
-  nextActionAt DateTime? @map("next_action_at")
-  enrolledAt  DateTime @default(now()) @map("enrolled_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  workflow    MarketingWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  lead        Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  logs        WorkflowLog[]
+  id           String            @id @default(uuid()) @db.Uuid
+  workflowId   String            @map("workflow_id") @db.Uuid
+  leadId       String            @map("lead_id") @db.Uuid
+  currentStep  String?           @map("current_step")
+  status       Int               @default(1)
+  nextActionAt DateTime?         @map("next_action_at")
+  enrolledAt   DateTime          @default(now()) @map("enrolled_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  lead         Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  workflow     MarketingWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  logs         WorkflowLog[]
 
   @@unique([workflowId, leadId])
   @@map("workflow_enrollments")
 }
 
 model WorkflowLog {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String?  @db.Uuid @map("tenant_id")
-  enrollmentId String   @db.Uuid @map("enrollment_id")
-  stepId       String   @map("step_id")
-  actionType   String   // EMAIL, SMS, DELAY, TAG
-  status       String   // SUCCESS, FAILED
+  id           String             @id @default(uuid()) @db.Uuid
+  enrollmentId String             @map("enrollment_id") @db.Uuid
+  stepId       String             @map("step_id")
+  actionType   String
+  status       String
   result       Json?
-  occurredAt   DateTime @default(now()) @map("occurred_at")
-
-  tenant       Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  occurredAt   DateTime           @default(now()) @map("occurred_at")
+  tenantId     String?            @map("tenant_id") @db.Uuid
   enrollment   WorkflowEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  tenant       Tenant?            @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("workflow_logs")
@@ -505,149 +453,134 @@ model WorkflowLog {
 
 model LeadInteraction {
   id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String?  @db.Uuid @map("tenant_id")
-  leadId      String   @db.Uuid @map("lead_id")
-  type        String   // EMAIL_OPEN, EMAIL_CLICK, PROPERTY_VIEW, FORM_SUBMIT, CHAT_INIT
-  metadata    Json?    // Store propertyId, campaignId, etc.
+  leadId      String   @map("lead_id") @db.Uuid
+  type        String
+  metadata    Json?
   scoreWeight Int      @default(0) @map("score_weight")
   occurredAt  DateTime @default(now()) @map("occurred_at")
-
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenantId    String?  @map("tenant_id") @db.Uuid
   lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("lead_interactions")
 }
 
 model UserPropertyAccess {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String?  @db.Uuid @map("tenant_id")
-  userId       String?  @db.Uuid @map("user_id")
-  propertyId   String?  @db.Uuid @map("property_id")
-  accessLevel  Int?     @map("access_level") // 1: read, 2: write, 3: admin
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // Relations
-  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  property     Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String?   @map("tenant_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  propertyId  String?   @map("property_id") @db.Uuid
+  accessLevel Int?      @map("access_level")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  property    Property? @relation(fields: [propertyId], references: [id])
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
 
   @@map("user_property_access")
 }
 
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String?  @db.Uuid @map("tenant_id")
-  userId    String?  @db.Uuid @map("user_id")
+  tenantId  String?  @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
   action    String?
   entity    String?
-  entityId  String?  @db.Uuid @map("entity_id")
+  entityId  String?  @map("entity_id") @db.Uuid
   ipAddress String?  @map("ip_address")
   createdAt DateTime @default(now()) @map("created_at")
-
-  // Relations
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
 }
 
 model Media {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String?  @db.Uuid @map("tenant_id")
-  userId          String?  @db.Uuid @map("user_id")
-  filename        String?
-  originalName    String?  @map("original_name")
-  mimeType        String?  @map("mime_type")
-  size            Int?
-  url             String?
-  alt             String?
-  description     String?
-  category        String?  @default("general")
-  type            String?  // image, video, document
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  propertyMainImages Property[] @relation("PropertyMainImage")
-  propertyFloorPlans Property[] @relation("PropertyFloorPlan")
-  propertyBrochures Property[] @relation("PropertyBrochure")
-  unitMainImages     Unit[]     @relation("UnitMainImage")
+  id                 String     @id @default(uuid()) @db.Uuid
+  tenantId           String?    @map("tenant_id") @db.Uuid
+  userId             String?    @map("user_id") @db.Uuid
+  filename           String?
+  originalName       String?    @map("original_name")
+  mimeType           String?    @map("mime_type")
+  size               Int?
+  url                String?
+  alt                String?
+  description        String?
+  category           String?    @default("general")
+  type               String?
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  tenant             Tenant?    @relation(fields: [tenantId], references: [id])
+  user               User?      @relation(fields: [userId], references: [id])
   pageFeatureImages  Page[]     @relation("PageFeatureImage")
+  propertyBrochures  Property[] @relation("PropertyBrochure")
+  propertyFloorPlans Property[] @relation("PropertyFloorPlan")
+  propertyMainImages Property[] @relation("PropertyMainImage")
+  unitMainImages     Unit[]     @relation("UnitMainImage")
 
   @@index([tenantId])
   @@map("media")
 }
 
-// Master definition of platform features
 model Module {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String
-  slug        String   @unique
-  description String?
-  status      Int      @default(1) // 1: Active, 2: Maintenance, 3: Disabled
-  createdAt   DateTime @default(now()) @map("created_at")
-  
-  // Relations
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  slug          String         @unique
+  description   String?
+  status        Int            @default(1)
+  createdAt     DateTime       @default(now()) @map("created_at")
   tenantModules TenantModule[]
-  plans         Plan[]
+  plans         Plan[]         @relation("ModuleToPlan")
 
   @@map("modules")
 }
 
-// Assignments of modules to specific owners/tenants
 model TenantModule {
-  tenantId    String   @db.Uuid @map("tenant_id")
-  moduleId    String   @db.Uuid @map("module_id")
-  isActive    Boolean  @default(true) @map("is_active")
-  settings    Json?    // Module-specific limits or configs
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  tenantId  String   @map("tenant_id") @db.Uuid
+  moduleId  String   @map("module_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  settings  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@id([tenantId, moduleId])
   @@map("tenant_modules")
 }
 
 model Integration {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid @map("tenant_id")
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
-  platform    String   @default("wordpress") // e.g., "wordpress", "shopify"
-  siteUrl     String   @map("site_url")     // The URL of the client's WP site
-  siteName    String?  @map("site_name")
-  
-  apiKey      String   @unique @map("api_key") // The unique key generated during connection
-  environment String   @default("production")  // production, development, staging
-  isSandbox   Boolean  @default(false)        @map("is_sandbox")
-  
-  status      Boolean  @default(true)
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  platform    String    @default("wordpress")
+  siteUrl     String    @map("site_url")
+  siteName    String?   @map("site_name")
+  apiKey      String    @unique @map("api_key")
+  environment String    @default("production")
+  isSandbox   Boolean   @default(false) @map("is_sandbox")
+  status      Boolean   @default(true)
   lastSyncAt  DateTime? @map("last_sync_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("integrations")
 }
 
 model Widget {
-  id            String   @id @default(uuid()) @db.Uuid
-  uniqueId      String   @unique @map("unique_id") // Human readable unique ID
-  tenantId      String?  @db.Uuid @map("tenant_id")
-  propertyId    String?  @db.Uuid @map("property_id")
+  id            String    @id @default(uuid()) @db.Uuid
+  uniqueId      String    @unique @map("unique_id")
+  tenantId      String?   @map("tenant_id") @db.Uuid
   name          String
-  type          String   // listing, booking, custom
-  configuration Json     // Design settings: colors, font, layout
-  status        Int      @default(1) // 1: active, 2: paused
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  type          String
+  configuration Json
+  status        Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  propertyId    String?   @map("property_id") @db.Uuid
+  property      Property? @relation(fields: [propertyId], references: [id])
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([propertyId])
@@ -655,19 +588,18 @@ model Widget {
 }
 
 model Website {
-  id            String   @id @default(uuid()) @db.Uuid
-  slug          String   @unique
-  customDomain  String?  @unique @map("custom_domain")
-  tenantId      String?  @db.Uuid @map("tenant_id")
-  propertyId    String?  @db.Uuid @map("property_id")
+  id            String    @id @default(uuid()) @db.Uuid
+  slug          String    @unique
+  customDomain  String?   @unique @map("custom_domain")
+  tenantId      String?   @map("tenant_id") @db.Uuid
+  propertyId    String?   @map("property_id") @db.Uuid
   name          String
-  configuration Json     // Page builder settings: colors, hero, components
-  status        Int      @default(1) // 1: active, 2: draft
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  configuration Json
+  status        Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  property      Property? @relation(fields: [propertyId], references: [id])
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([propertyId])
@@ -675,100 +607,96 @@ model Website {
 }
 
 model Page {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String?  @db.Uuid @map("tenant_id")
-  title           String
-  slug            String   @unique
-  content         String?  @db.Text
-  featureImageId  String?  @db.Uuid @map("feature_image_id")
-  seoTitle        String?  @map("seo_title")
-  seoDescription  String?  @map("seo_description")
-  seoKeywords     String?  @map("seo_keywords")
-  status          Int      @default(1) // 1: Draft, 2: Published
-  publishedAt     DateTime? @map("published_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  featureImage    Media?   @relation("PageFeatureImage", fields: [featureImageId], references: [id])
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String?   @map("tenant_id") @db.Uuid
+  title          String
+  slug           String    @unique
+  content        String?
+  featureImageId String?   @map("feature_image_id") @db.Uuid
+  seoTitle       String?   @map("seo_title")
+  seoDescription String?   @map("seo_description")
+  seoKeywords    String?   @map("seo_keywords")
+  status         Int       @default(1)
+  publishedAt    DateTime? @map("published_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  featureImage   Media?    @relation("PageFeatureImage", fields: [featureImageId], references: [id])
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("pages")
 }
 
 model Payment {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String?  @db.Uuid @map("tenant_id")
-  bookingId       String?  @db.Uuid @map("booking_id")
-  userId          String?  @db.Uuid @map("user_id")
-  amount          Decimal  @db.Decimal(15, 2)
-  currency        String   @default("USD")
-  status          String   // COMPLETED, FAILED, REFUNDED
-  paymentMethod   String?  @map("payment_method")
-  transactionId   String?  @unique @map("transaction_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  booking         Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id            String   @id @default(uuid()) @db.Uuid
+  bookingId     String?  @map("booking_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  amount        Decimal  @db.Decimal(15, 2)
+  currency      String   @default("USD")
+  status        String
+  paymentMethod String?  @map("payment_method")
+  transactionId String?  @unique @map("transaction_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  tenantId      String?  @map("tenant_id") @db.Uuid
+  booking       Booking? @relation(fields: [bookingId], references: [id])
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
 
   @@index([tenantId])
   @@map("payments")
 }
+
 model Property3DConfig {
-  id           String   @id @default(uuid()) @db.Uuid
-  propertyId   String   @unique @db.Uuid @map("property_id")
-  config       Json     // Stores the scene configuration, floor dims, initial camera, etc.
-  layout       Json     // Stores the positions and mapping of units in 3D space
-  tourData     Json?    // Hotspots and material customization data
-  status       Int      @default(1) // 1: Active, 2: Inactive
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @unique @map("property_id") @db.Uuid
+  config     Json
+  layout     Json
+  status     Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  tourData   Json?
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("property_3d_configs")
 }
 
-// Agent Module
 model Agent {
-  id                 String   @id @default(uuid()) @db.Uuid
-  tenantId           String   @db.Uuid @map("tenant_id")
-  userId             String   @unique @db.Uuid @map("user_id") // One user = One agent profile
+  id                 String          @id @default(uuid()) @db.Uuid
+  tenantId           String          @map("tenant_id") @db.Uuid
+  userId             String          @unique @map("user_id") @db.Uuid
   specialization     String?
-  commissionRate     Decimal  @default(0.0) @map("commission_rate") @db.Decimal(5, 2)
-  status             Int      @default(1) // 1: Active, 2: Inactive, 3: On Leave
-  lastLeadAssignedAt DateTime? @map("last_lead_assigned_at")
-  totalLeads         Int      @default(0) @map("total_leads")
-  totalDeals         Int      @default(0) @map("total_deals")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  commissions Commission[]
-  bookings    Booking[]
-  agentProperties AgentProperty[]
-  agentLeads      AgentLead[]
+  commissionRate     Decimal         @default(0.0) @map("commission_rate") @db.Decimal(5, 2)
+  status             Int             @default(1)
+  lastLeadAssignedAt DateTime?       @map("last_lead_assigned_at")
+  totalLeads         Int             @default(0) @map("total_leads")
+  totalDeals         Int             @default(0) @map("total_deals")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  agentLeads         AgentLead[]
+  agentProperties    AgentProperty[]
+  tenant             Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings           Booking[]
+  commissions        Commission[]
 
   @@index([tenantId])
   @@map("agents")
 }
 
 model Commission {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String?  @db.Uuid @map("tenant_id")
-  agentId     String   @db.Uuid @map("agent_id")
-  bookingId   String?  @db.Uuid @map("booking_id")
-  amount      Decimal  @db.Decimal(15, 2)
-  rateSnapshot Decimal @map("rate_snapshot") @db.Decimal(5, 2) // Rate at time of deal
-  status      String   @default("PENDING") // PENDING, PAID, CANCELLED
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  booking     Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  id           String   @id @default(uuid()) @db.Uuid
+  agentId      String   @map("agent_id") @db.Uuid
+  bookingId    String?  @map("booking_id") @db.Uuid
+  amount       Decimal  @db.Decimal(15, 2)
+  rateSnapshot Decimal  @map("rate_snapshot") @db.Decimal(5, 2)
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  booking      Booking? @relation(fields: [bookingId], references: [id])
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([agentId])
@@ -778,132 +706,121 @@ model Commission {
 
 model AgentProperty {
   id             String   @id @default(uuid()) @db.Uuid
-  agentId        String   @db.Uuid @map("agent_id")
-  propertyId     String   @db.Uuid @map("property_id")
-  commissionRate Decimal? @db.Decimal(5, 2) @map("commission_rate")
+  agentId        String   @map("agent_id") @db.Uuid
+  propertyId     String   @map("property_id") @db.Uuid
+  commissionRate Decimal? @map("commission_rate") @db.Decimal(5, 2)
   isPrimary      Boolean  @default(false) @map("is_primary")
-  status         Int      @default(1) // 1: Active, 2: Inactive
-  notes          String?  @db.Text
+  status         Int      @default(1)
+  notes          String?
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
-
-  agent    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  agent          Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  property       Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("agent_properties")
 }
 
 model AgentLead {
-  id             String   @id @default(uuid()) @db.Uuid
-  agentId        String   @db.Uuid @map("agent_id")
-  leadId         String   @db.Uuid @map("lead_id")
-  isPrimary      Boolean  @default(true) @map("is_primary")
-  status         Int      @default(1) // 1: Active, 2: Revoked/History
-  notes          String?  @db.Text
-  assignedAt     DateTime @default(now()) @map("assigned_at")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid()) @db.Uuid
+  agentId    String   @map("agent_id") @db.Uuid
+  leadId     String   @map("lead_id") @db.Uuid
+  isPrimary  Boolean  @default(true) @map("is_primary")
+  status     Int      @default(1)
+  notes      String?
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
   @@map("agent_leads")
 }
 
-// Marketing & Email Campaign Module
 model EmailTemplate {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @db.Uuid @map("tenant_id")
+  id        String     @id @default(uuid()) @db.Uuid
+  tenantId  String     @map("tenant_id") @db.Uuid
   name      String
   subject   String?
-  content   String   @db.Text // HTML or JSON configuration
-  type      String   @default("email") // email, whatsapp
-  isDefault Boolean  @default(false) @map("is_default")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  content   String
+  type      String     @default("email")
+  isDefault Boolean    @default(false) @map("is_default")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
   campaigns Campaign[]
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("email_templates")
 }
 
 model AudienceGroup {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid @map("tenant_id")
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @map("tenant_id") @db.Uuid
   name        String
   description String?
-  isDynamic   Boolean  @default(false) @map("is_dynamic")
-  filters     Json?    // Conditions for dynamic groups
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leads       Lead[]   @relation("LeadAudienceGroups")
+  isDynamic   Boolean    @default(false) @map("is_dynamic")
+  filters     Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   campaigns   Campaign[]
+  leads       Lead[]     @relation("LeadAudienceGroups")
 
   @@index([tenantId])
   @@map("audience_groups")
 }
 
 model Campaign {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @db.Uuid @map("tenant_id")
-  name          String
-  templateId    String?  @db.Uuid @map("template_id")
-  groupId       String?  @db.Uuid @map("group_id")
-  status        Int      @default(1) // 1: Draft, 2: Scheduled, 3: Sending, 4: Sent, 5: Failed, 6: Cancelled
-  scheduledAt   DateTime? @map("scheduled_at")
-  sentAt        DateTime? @map("sent_at")
-  
-  // Tracking Stats
-  totalRecipients Int    @default(0) @map("total_recipients")
-  deliveredCount  Int    @default(0) @map("delivered_count")
-  openedCount     Int    @default(0) @map("opened_count")
-  clickedCount    Int    @default(0) @map("clicked_count")
-  
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  template  EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  group     AudienceGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  logs      CampaignLog[]
+  id              String         @id @default(uuid()) @db.Uuid
+  tenantId        String         @map("tenant_id") @db.Uuid
+  name            String
+  templateId      String?        @map("template_id") @db.Uuid
+  groupId         String?        @map("group_id") @db.Uuid
+  status          Int            @default(1)
+  scheduledAt     DateTime?      @map("scheduled_at")
+  sentAt          DateTime?      @map("sent_at")
+  totalRecipients Int            @default(0) @map("total_recipients")
+  deliveredCount  Int            @default(0) @map("delivered_count")
+  openedCount     Int            @default(0) @map("opened_count")
+  clickedCount    Int            @default(0) @map("clicked_count")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  logs            CampaignLog[]
+  group           AudienceGroup? @relation(fields: [groupId], references: [id])
+  template        EmailTemplate? @relation(fields: [templateId], references: [id])
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("campaigns")
 }
 
 model CampaignLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String?  @db.Uuid @map("tenant_id")
-  campaignId  String   @db.Uuid @map("campaign_id")
-  leadId      String   @db.Uuid @map("lead_id")
-  status      String   // SENT, DELIVERED, OPENED, CLICKED, FAILED
-  ipAddress   String?  @map("ip_address")
-  userAgent   String?  @map("user_agent")
-  occurredAt  DateTime @default(now()) @map("occurred_at")
-
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid()) @db.Uuid
+  campaignId String   @map("campaign_id") @db.Uuid
+  leadId     String   @map("lead_id") @db.Uuid
+  status     String
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("campaign_logs")
 }
 
 model MarketingWorkflow {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid @map("tenant_id")
+  id          String               @id @default(uuid()) @db.Uuid
+  tenantId    String               @map("tenant_id") @db.Uuid
   name        String
   description String?
-  trigger     Json     // Workflow entry logic
-  steps       Json     // Node-based step configuration
-  status      Int      @default(1) // 1: Active, 2: Inactive
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trigger     Json
+  steps       Json
+  status      Int                  @default(1)
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   enrollments WorkflowEnrollment[]
 
   @@index([tenantId])
@@ -912,32 +829,32 @@ model MarketingWorkflow {
 
 model FormBuilder {
   id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @db.Uuid @map("tenant_id")
+  tenantId      String   @map("tenant_id") @db.Uuid
   name          String
-  configuration Json     // Form fields and design
-  targetGroupId String?  @db.Uuid @map("target_group_id") // Auto-add leads to this group
-  status        Int      @default(1) // 1: Active, 2: Inactive
+  configuration Json
+  targetGroupId String?  @map("target_group_id") @db.Uuid
+  status        Int      @default(1)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("form_builders")
 }
+
 model LoginAttempt {
-  id          String   @id @default(uuid()) @db.Uuid
-  identifier  String   @unique // email or IP
-  count       Int      @default(0)
+  id          String    @id @default(uuid()) @db.Uuid
+  identifier  String    @unique
+  count       Int       @default(0)
   lockedUntil DateTime? @map("locked_until")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("login_attempts")
 }
 
 model BlacklistedToken {
   id        String   @id @default(uuid()) @db.Uuid
-  token     String   @unique @db.Text
+  token     String   @unique
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -947,47 +864,40 @@ model BlacklistedToken {
 
 model PlanUpgradeRequest {
   id              String   @id @default(uuid()) @db.Uuid
-  tenantId        String   @db.Uuid @map("tenant_id")
-  ownerId         String   @db.Uuid @map("owner_id")
-  currentPlanId   String?  @db.Uuid @map("current_plan_id")
-  requestedPlanId String   @db.Uuid @map("requested_plan_id")
-  status          Int      @default(1) // 1: Pending, 2: Approved, 3: Rejected
+  tenantId        String   @map("tenant_id") @db.Uuid
+  ownerId         String   @map("owner_id") @db.Uuid
+  currentPlanId   String?  @map("current_plan_id") @db.Uuid
+  requestedPlanId String   @map("requested_plan_id") @db.Uuid
+  status          Int      @default(1)
   email           String
-  message         String?  @db.Text
+  message         String?
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
-
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   requestedPlan   Plan     @relation(fields: [requestedPlanId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([ownerId])
   @@map("plan_upgrade_requests")
 }
 
-// ============================================
-// SOCIAL MEDIA MODULE
-// ============================================
-
-// Connected social media accounts (OAuth)
 model ConnectedAccount {
   id           String         @id @default(uuid()) @db.Uuid
-  tenantId     String         @db.Uuid @map("tenant_id")
-  userId       String         @db.Uuid @map("user_id")
+  tenantId     String         @map("tenant_id") @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
   platform     SocialPlatform
-  accountId    String         @map("account_id") // Platform-specific account ID
+  accountId    String         @map("account_id")
   accountName  String         @map("account_name")
-  accessToken  String         @db.Text @map("access_token")
-  refreshToken String?        @db.Text @map("refresh_token")
+  accessToken  String         @map("access_token")
+  refreshToken String?        @map("refresh_token")
   tokenExpiry  DateTime?      @map("token_expiry")
   isActive     Boolean        @default(true) @map("is_active")
-  metadata     Json?          @default("{}") // Platform-specific data
+  metadata     Json?          @default("{}")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, platform])
   @@index([tenantId])
@@ -995,18 +905,17 @@ model ConnectedAccount {
   @@map("connected_accounts")
 }
 
-// Scheduled social media posts
 model ScheduledPost {
   id               String           @id @default(uuid()) @db.Uuid
-  tenantId         String           @db.Uuid @map("tenant_id")
-  userId           String           @db.Uuid @map("user_id")
-  propertyId       String?          @db.Uuid @map("property_id") // Link to property
+  tenantId         String           @map("tenant_id") @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  propertyId       String?          @map("property_id") @db.Uuid
   title            String
-  description      String?          @db.Text
+  description      String?
   hashtags         String?
-  platforms        SocialPlatform[] // Array of platforms
+  platforms        SocialPlatform[]
   scheduledDate    DateTime         @map("scheduled_date")
-  scheduledTime    String           @map("scheduled_time") // HH:MM format
+  scheduledTime    String           @map("scheduled_time")
   status           PostStatus       @default(DRAFT)
   isVideo          Boolean          @default(false) @map("is_video")
   isCarousel       Boolean          @default(false) @map("is_carousel")
@@ -1017,11 +926,10 @@ model ScheduledPost {
   lastPostedAt     DateTime?        @map("last_posted_at")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
-
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property       Property?       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  publishedPosts PublishedPost[]
+  publishedPosts   PublishedPost[]
+  property         Property?        @relation(fields: [propertyId], references: [id])
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([userId])
@@ -1031,27 +939,25 @@ model ScheduledPost {
   @@map("scheduled_posts")
 }
 
-// Published posts tracking
 model PublishedPost {
   id              String         @id @default(uuid()) @db.Uuid
-  tenantId        String         @db.Uuid @map("tenant_id")
-  userId          String         @db.Uuid @map("user_id")
-  scheduledPostId String         @db.Uuid @map("scheduled_post_id")
+  tenantId        String         @map("tenant_id") @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  scheduledPostId String         @map("scheduled_post_id") @db.Uuid
   platform        SocialPlatform
-  platformPostId  String         @map("platform_post_id") // ID from social platform
+  platformPostId  String         @map("platform_post_id")
   postUrl         String         @map("post_url")
-  caption         String?        @db.Text
+  caption         String?
   mediaUrls       String[]       @map("media_urls")
   hashtags        String?
   status          String         @default("published")
-  metrics         Json? // Likes, comments, shares, reach
+  metrics         Json?
   publishedAt     DateTime       @default(now()) @map("published_at")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
-
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+  scheduledPost   ScheduledPost  @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([platform, platformPostId])
   @@index([tenantId])
@@ -1060,70 +966,64 @@ model PublishedPost {
   @@map("published_posts")
 }
 
-// WhatsApp templates
 model WhatsAppTemplate {
   id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String   @db.Uuid @map("tenant_id")
+  tenantId   String   @map("tenant_id") @db.Uuid
   wabaId     String   @map("waba_id")
   name       String
   category   String
   language   String
   status     String   @default("PENDING")
-  components Json // Hero, Body, Footer, Buttons
-  variables  String[] // List of variables in the template
+  components Json
+  variables  String[]
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, wabaId, name, language])
   @@index([tenantId])
   @@map("whatsapp_templates")
 }
 
-// WhatsApp campaigns
 model WhatsAppCampaign {
-  id             String    @id @default(uuid()) @db.Uuid
-  tenantId       String    @db.Uuid @map("tenant_id")
-  userId         String    @db.Uuid @map("user_id")
-  wabaId         String    @map("waba_id")
-  phoneNumberId  String    @map("phone_number_id")
-  templateName   String    @map("template_name")
+  id             String            @id @default(uuid()) @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  wabaId         String            @map("waba_id")
+  phoneNumberId  String            @map("phone_number_id")
+  templateName   String            @map("template_name")
   name           String
-  status         String    @default("SCHEDULED")
-  scheduledAt    DateTime? @map("scheduled_at")
-  sentCount      Int       @default(0) @map("sent_count")
-  deliveredCount Int       @default(0) @map("delivered_count")
-  readCount      Int       @default(0) @map("read_count")
-  failedCount    Int       @default(0) @map("failed_count")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages WhatsAppMessage[]
+  status         String            @default("SCHEDULED")
+  scheduledAt    DateTime?         @map("scheduled_at")
+  sentCount      Int               @default(0) @map("sent_count")
+  deliveredCount Int               @default(0) @map("delivered_count")
+  readCount      Int               @default(0) @map("read_count")
+  failedCount    Int               @default(0) @map("failed_count")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages       WhatsAppMessage[]
 
   @@index([tenantId])
   @@index([userId])
   @@map("whatsapp_campaigns")
 }
 
-// WhatsApp messages log
 model WhatsAppMessage {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String?   @db.Uuid @map("tenant_id")
-  businessId    String?   @map("business_id")
-  campaignId    String?   @db.Uuid @map("campaign_id")
-  senderNumber  String    @map("sender_number")
-  messageText   String?   @db.Text @map("message_text")
-  direction     String    @map("direction") // INBOUND, OUTBOUND
-  metaMessageId String?   @unique @map("meta_message_id")
-  status        String    @default("sent")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-
-  tenant   Tenant?           @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  campaign WhatsAppCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  id            String            @id @default(uuid()) @db.Uuid
+  tenantId      String?           @map("tenant_id") @db.Uuid
+  businessId    String?           @map("business_id")
+  senderNumber  String            @map("sender_number")
+  messageText   String?           @map("message_text")
+  direction     String            @map("direction")
+  metaMessageId String?           @unique @map("meta_message_id")
+  status        String            @default("sent")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  campaignId    String?           @map("campaign_id") @db.Uuid
+  campaign      WhatsAppCampaign? @relation(fields: [campaignId], references: [id])
+  tenant        Tenant?           @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@index([businessId])
@@ -1132,7 +1032,6 @@ model WhatsAppMessage {
   @@map("whatsapp_messages")
 }
 
-// Enums for Social Media
 enum SocialPlatform {
   FACEBOOK
   INSTAGRAM
