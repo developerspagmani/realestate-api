@@ -61,6 +61,7 @@ model Tenant {
   whatsappMessages      WhatsAppMessage[]
   whatsappTemplates     WhatsAppTemplate[]
   whatsappChatbot       WhatsAppChatbot?
+  portalListings        PortalListing[]
   widgets               Widget[]
   workflowLogs          WorkflowLog[]
 
@@ -207,6 +208,7 @@ model Property {
   units              Unit[]
   userPropertyAccess UserPropertyAccess[]
   websites           Website[]
+  portalListings     PortalListing[]
   widgets            Widget[]
 
   @@index([tenantId])
@@ -397,6 +399,7 @@ model Lead {
   preferredDate  DateTime?            @map("preferred_date")
   priority       Int                  @default(2)
   status         Int                  @default(1)
+  tags           String?
   updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at")
   userId         String?              @map("user_id") @db.Uuid
   assignedAt     DateTime?            @map("assigned_at")
@@ -1041,6 +1044,7 @@ enum SocialPlatform {
   LINKEDIN
   TIKTOK
   WHATSAPP
+  NINETYNINE_ACRES
 }
 
 enum PostStatus {
@@ -1063,4 +1067,27 @@ model WhatsAppChatbot {
 
   @@index([tenantId])
   @@map("whatsapp_chatbots")
+}
+
+model PortalListing {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  propertyId   String    @map("property_id") @db.Uuid
+  portal       String    // e.g., "99ACRES", "MAGICBRICKS"
+  externalId   String?   @map("external_id")
+  status       String    @default("PENDING") // PENDING, PUBLISHED, FAILED, EXPIRED
+  syncStatus   String?   @map("sync_status")
+  url          String?   // Direct link to the listing on the portal
+  errorMessage String?   @map("error_message")
+  metadata     Json?     @default("{}")
+  lastSyncAt   DateTime  @default(now()) @map("last_sync_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("portal_listings")
 }

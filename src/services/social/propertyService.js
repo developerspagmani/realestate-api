@@ -129,6 +129,8 @@ class PropertyService {
             details += `\n✨ *3D Tour Available:* ${rootDomain}/3d-tour/${property.slug}`;
         }
 
+        details += `\n\nTo book a visit, reply with: *Book ${property.title.split(' ')[0]}*`;
+
         return details;
     }
 }

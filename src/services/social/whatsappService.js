@@ -41,29 +41,6 @@ class WhatsAppService {
     }
 
     /**
-     * Formats property details into a message string for WhatsApp.
-     * Includes links and a call to action for booking.
-     * @param {object} property - The property object.
-     * @returns {string} Formatted message string.
-     */
-    formatPropertyMessage(property) {
-        const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'https://www.app.virpanix.com';
-        let details = `🏡 *${property.title}*\n`;
-        details += `📍 ${property.address}\n`;
-        details += `💰 ${property.price.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}\n`;
-        details += `🛏️ ${property.bedrooms} beds | 🛁 ${property.bathrooms} baths | 📐 ${property.area} sqft`;
-        details += `\n🔗 View Details: ${rootDomain}/p/${property.slug}`;
-
-        if (property.workspace3D) {
-            details += `\n✨ *3D Tour Available:* ${rootDomain}/3d-tour/${property.slug}`;
-        }
-
-        details += `\n\nTo book a visit, reply with: *Book ${property.title.split(' ')[0]}*`;
-
-        return details;
-    }
-
-    /**
      * Sync templates from Meta to local database
      */
     async syncTemplatesFromMeta({ tenantId, wabaId, accessToken }) {
@@ -333,54 +310,103 @@ class WhatsAppService {
                 // 1. Handle Response to previous step
                 if (interactive?.button_reply) {
                     const buttonId = interactive.button_reply.id;
-                    // Find the button in the current step to determine next step and data to save
-                    const currentStep = steps.find(s => s.id === currentStepId);
-                    const button = currentStep?.buttons?.find(b => b.label === interactive.button_reply.title || b.id === buttonId);
 
-                    if (button) {
-                        nextStepId = button.nextStepId;
-                        // Save choice if configured
-                        if (button.fieldToSave && button.valueToSave !== undefined) {
-                            const leadNurtureService = require('./leadNurtureService');
-                            await leadNurtureService.enrichLeadPreferences(lead.id, null, { [button.fieldToSave]: button.valueToSave }, { skipNotification: true });
+                    // 📅 Global Booking Button Handler
+                    if (buttonId.startsWith('btn_book_')) {
+                        nextStepId = 'ask_booking_date';
+                    }
+                    else if (buttonId === 'btn_confirm_yes') {
+                        nextStepId = 'confirm_booking';
+                    }
+                    else if (buttonId === 'btn_confirm_no') {
+                        nextStepId = 'ask_booking_date';
+                    }
+                    else if (buttonId.startsWith('btn_date_')) {
+                        nextStepId = 'check_availability';
+                        const dateValue = buttonId.replace('btn_date_', '').toUpperCase();
+                        const leadNurtureService = require('./leadNurtureService');
+                        await leadNurtureService.enrichLeadPreferences(lead.id, null, { lastBookingDate: dateValue }, { skipNotification: true });
+                    }
+                    else {
+                        // Regular funnel button handler
+                        const steps = chatbotConfig.steps || [];
+                        const currentStep = steps.find(s => s.id === currentStepId);
+                        const button = currentStep?.buttons?.find(b => b.id === buttonId || b.label === interactive.button_reply.title);
+
+                        if (button) {
+                            nextStepId = button.nextStepId;
+                            // Save choice if configured
+                            if (button.fieldToSave && button.valueToSave !== undefined) {
+                                const leadNurtureService = require('./leadNurtureService');
+                                await leadNurtureService.enrichLeadPreferences(lead.id, null, { [button.fieldToSave]: button.valueToSave }, { skipNotification: true });
+                            }
                         }
                     }
                 }
 
-                // If no state or no valid button transition, check for keywords or set to start
+                // Keyword handlers
                 if (!nextStepId) {
-                    const resetKeywords = ['hi', 'hello', 'start', 'menu', 'hey', 'help'];
                     const lowerText = userText.toLowerCase();
+                    const resetKeywords = ['hi', 'hello', 'start', 'menu', 'hey', 'help'];
 
-                    // 📅 Handle Booking Keyword
                     if (lowerText.includes('book')) {
-                        // Extract property name or just start booking flow
                         nextStepId = 'ask_booking_date';
-                    }
-                    else if (!currentStepId || resetKeywords.includes(lowerText)) {
+                    } else if (!currentStepId || resetKeywords.includes(lowerText)) {
                         nextStepId = chatbotConfig.startStepId || steps[0]?.id;
-                    }
-                    else {
-                        // If in middle of funnel but input isn't a button, try AI or stick to current
+                    } else {
                         nextStepId = currentStepId;
                     }
                 }
 
                 if (nextStepId) {
-                    // Update current step
-                    await prisma.lead.update({
-                        where: { id: lead.id },
-                        data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
-                    });
-
                     const nextStep = steps.find(s => s.id === nextStepId);
+
                     if (nextStep) {
+                        await prisma.lead.update({
+                            where: { id: lead.id },
+                            data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
+                        });
                         return await this.executeBotStep(nextStep, { lead, phoneNumberId, from, accessToken, businessName });
+                    } else {
+                        // 🛠️ VIRTUAL STEPS: Support booking even if steps are missing from JSON
+                        const virtualSteps = {
+                            'ask_booking_date': {
+                                id: 'ask_booking_date',
+                                type: 'question',
+                                content: 'When would you like to visit? Please choose a day:',
+                                buttons: [
+                                    { id: 'btn_date_today', label: 'Today' },
+                                    { id: 'btn_date_tomorrow', label: 'Tomorrow' },
+                                    { id: 'btn_date_weekend', label: 'This Weekend' }
+                                ]
+                            },
+                            'check_availability': { id: 'check_availability', type: 'action', actionType: 'CHECK_AVAILABILITY' },
+                            'confirm_booking': { id: 'confirm_booking', type: 'action', actionType: 'CREATE_BOOKING' }
+                        };
+
+                        if (virtualSteps[nextStepId]) {
+                            await prisma.lead.update({
+                                where: { id: lead.id },
+                                data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
+                            });
+                            return await this.executeBotStep(virtualSteps[nextStepId], { lead, phoneNumberId, from, accessToken, businessName });
+                        }
+
+                        // Fallback: If step is missing and not virtual, reset to start
+                        const startStepId = chatbotConfig.startStepId || steps[0]?.id;
+                        const startStep = steps.find(s => s.id === startStepId);
+                        if (startStep) {
+                            await prisma.lead.update({
+                                where: { id: lead.id },
+                                data: { preferences: { ...(lead.preferences || {}), chatbotStepId: startStepId } }
+                            });
+                            return await this.executeBotStep(startStep, { lead, phoneNumberId, from, accessToken, businessName });
+                        }
                     }
                 }
             }
 
-            // 🧠 FALLBACK TO AI LOGIC (Existing logic)
+            // Fallback AI
             const leadNurtureService = require('./leadNurtureService');
             await leadNurtureService.enrichLeadPreferences(lead.id, userText, {}, { skipNotification: true });
 
@@ -388,14 +414,23 @@ class WhatsAppService {
             const filters = updatedLead.preferences || {};
 
             const propertyKeywords = ['property', 'properties', 'house', 'home', 'apartment', 'villa', 'flat', 'search'];
-            const isPropertySearch = propertyKeywords.some(k => userText.toLowerCase().includes(k)) || Object.keys(filters).length > 1; // More than just stepId
+            const isPropertySearch = propertyKeywords.some(k => userText.toLowerCase().includes(k)) || Object.keys(filters).length > 1;
 
             if (isPropertySearch) {
                 const properties = await propertyService.searchProperties(filters, tenantId);
                 if (properties.length > 0) {
                     await this.sendTextMessage({ phoneNumberId, to: from, text: `I found ${properties.length} matches! 🏠✨`, accessToken });
                     for (const prop of properties.slice(0, 3)) {
-                        await this.sendTextMessage({ phoneNumberId, to: from, text: propertyService.formatPropertyMessage(prop), accessToken });
+                        const propertyText = propertyService.formatPropertyMessage(prop);
+                        await this.sendButtonsMessage({
+                            phoneNumberId,
+                            to: from,
+                            text: propertyText,
+                            buttons: [
+                                { id: `btn_book_${prop.id.substring(0, 8)}`, title: "Book Visit" }
+                            ],
+                            accessToken
+                        });
                     }
                     await this.sendButtonsMessage({
                         phoneNumberId, to: from, text: "Would you like more options?",
@@ -428,16 +463,15 @@ class WhatsAppService {
                 phoneNumberId,
                 to: from,
                 text: step.content,
-                buttons: step.buttons.map(b => ({ title: b.label })),
+                buttons: step.buttons.map(b => ({ id: b.id, title: b.label })),
                 accessToken
             });
         } else if (step.type === 'message') {
             await this.sendTextMessage({ phoneNumberId, to: from, text: step.content, accessToken });
-            // If message has buttons but not a question, still send them
             if (step.buttons?.length > 0) {
                 return await this.sendButtonsMessage({
                     phoneNumberId, to: from, text: "Please choose an option:",
-                    buttons: step.buttons.map(b => ({ title: b.label })),
+                    buttons: step.buttons.map(b => ({ id: b.id, title: b.label })),
                     accessToken
                 });
             }
@@ -448,13 +482,26 @@ class WhatsAppService {
                 if (properties.length > 0) {
                     await this.sendTextMessage({ phoneNumberId, to: from, text: `Matching properties for you:`, accessToken });
                     for (const prop of properties.slice(0, 3)) {
-                        await this.sendTextMessage({ phoneNumberId, to: from, text: propertyService.formatPropertyMessage(prop), accessToken });
+                        const propertyText = propertyService.formatPropertyMessage(prop);
+                        await this.sendButtonsMessage({
+                            phoneNumberId,
+                            to: from,
+                            text: propertyText,
+                            buttons: [
+                                { id: `btn_book_${prop.id.substring(0, 8)}`, title: "Book Visit" }
+                            ],
+                            accessToken
+                        });
                     }
+                    await this.sendButtonsMessage({
+                        phoneNumberId, to: from, text: "Would you like more options?",
+                        buttons: [{ id: 'talk_agent', title: "Talk to Agent" }, { id: 'more_props', title: "Show More" }],
+                        accessToken
+                    });
                 } else {
                     await this.sendTextMessage({ phoneNumberId, to: from, text: aiService.getNoResultsMessage(filters, { businessName }), accessToken });
                 }
-            } else if (step.type === 'action' && step.actionType === 'CHECK_AVAILABILITY') {
-                // Simplified availability check - always available for demo or check against actual calendar if exists
+            } else if (step.actionType === 'CHECK_AVAILABILITY') {
                 await this.sendTextMessage({ phoneNumberId, to: from, text: `✅ That date is available!`, accessToken });
                 await this.sendButtonsMessage({
                     phoneNumberId, to: from, text: "Would you like to confirm the booking?",
@@ -464,153 +511,91 @@ class WhatsAppService {
                     ],
                     accessToken
                 });
-            } else if (step.type === 'action' && step.actionType === 'CREATE_BOOKING') {
+            } else if (step.actionType === 'CREATE_BOOKING') {
                 try {
-                    // Create booking in the system
-                    const BookingService = require('../marketing/BookingService'); // Assuming this exists or create using prisma
                     const booking = await prisma.booking.create({
                         data: {
                             tenantId: lead.tenantId,
                             leadId: lead.id,
-                            status: 1, // Pending
-                            bookingDate: new Date(), // Use extracted date from preferences if available
+                            status: 1,
+                            bookingDate: new Date(),
                             notes: 'Booked via WhatsApp Chatbot'
                         }
                     });
-                    await this.sendTextMessage({ phoneNumberId, to: from, text: `🎊 *Booking Confirmed!* Your visit has been scheduled. Our team will call you shortly to confirm the time.`, accessToken });
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `🎊 *Booking Confirmed!* Your visit has been scheduled.`, accessToken });
                     await this.sendTextMessage({ phoneNumberId, to: from, text: `Booking ID: #${booking.id.split('-')[0].toUpperCase()}`, accessToken });
                 } catch (err) {
-                    console.error('Booking creation error:', err);
-                    await this.sendTextMessage({ phoneNumberId, to: from, text: `Sorry, I couldn't process the booking right now. An agent will help you soon.`, accessToken });
+                    console.error('Booking error:', err);
+                    await this.sendTextMessage({ phoneNumberId, to: from, text: `Error processing booking.`, accessToken });
                 }
             }
         }
         return { success: true };
     }
 
-    /**
-     * Handle message status update from webhook
-     */
     async handleMessageStatus(status) {
         try {
             const { id: messageId, status: messageStatus } = status;
-
-            const message = await prisma.whatsAppMessage.findFirst({
-                where: { metaMessageId: messageId }
-            });
-
+            const message = await prisma.whatsAppMessage.findFirst({ where: { metaMessageId: messageId } });
             if (message) {
-                await prisma.whatsAppMessage.update({
-                    where: { id: message.id },
-                    data: { status: messageStatus }
-                });
-
+                await prisma.whatsAppMessage.update({ where: { id: message.id }, data: { status: messageStatus } });
                 if (message.campaignId) {
                     const updateData = {};
                     if (messageStatus === 'delivered') updateData.deliveredCount = { increment: 1 };
                     else if (messageStatus === 'read') updateData.readCount = { increment: 1 };
                     else if (messageStatus === 'failed') updateData.failedCount = { increment: 1 };
-
                     if (Object.keys(updateData).length > 0) {
-                        await prisma.whatsAppCampaign.update({
-                            where: { id: message.campaignId },
-                            data: updateData
-                        });
+                        await prisma.whatsAppCampaign.update({ where: { id: message.campaignId }, data: updateData });
                     }
                 }
             }
-
             return { success: true };
         } catch (error) {
-            console.error('Handle message status error:', error);
+            console.error('Status error:', error);
             return { success: false };
         }
     }
 
-    /**
-     * Send bulk messages for campaign
-     */
     async sendBulkMessages({ tenantId, campaignId, phoneNumberId, templateName, recipients, accessToken }) {
         try {
             let sentCount = 0;
             let failedCount = 0;
-
-            // Fetch template to get the correct language code
-            const template = await prisma.whatsAppTemplate.findFirst({
-                where: { tenantId, name: templateName }
-            });
-
+            const template = await prisma.whatsAppTemplate.findFirst({ where: { tenantId, name: templateName } });
             const languageCode = template?.language || 'en_US';
 
             for (const recipient of recipients) {
-                const result = await this.sendMessage({
-                    phoneNumberId,
-                    to: recipient.phone,
-                    templateName,
-                    components: recipient.components,
-                    languageCode,
-                    accessToken
-                });
-
+                const result = await this.sendMessage({ phoneNumberId, to: recipient.phone, templateName, components: recipient.components, languageCode, accessToken });
                 if (result.success) {
                     sentCount++;
                     await prisma.whatsAppMessage.create({
-                        data: {
-                            tenantId,
-                            campaignId,
-                            senderNumber: recipient.phone,
-                            messageText: `Template: ${templateName}`,
-                            direction: 'OUTBOUND',
-                            metaMessageId: result.messageId,
-                            status: 'sent'
-                        }
+                        data: { tenantId, campaignId, senderNumber: recipient.phone, messageText: `Template: ${templateName}`, direction: 'OUTBOUND', metaMessageId: result.messageId, status: 'sent' }
                     });
                 } else {
                     failedCount++;
                 }
-
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            await prisma.whatsAppCampaign.update({
-                where: { id: campaignId },
-                data: {
-                    sentCount: { increment: sentCount },
-                    failedCount: { increment: failedCount },
-                    status: 'SENT'
-                }
-            });
-
+            await prisma.whatsAppCampaign.update({ where: { id: campaignId }, data: { sentCount: { increment: sentCount }, failedCount: { increment: failedCount }, status: 'SENT' } });
             return { success: true, sentCount, failedCount };
         } catch (error) {
-            console.error('Send bulk messages error:', error);
-            return { success: false, message: 'Failed to send bulk messages' };
+            console.error('Bulk send error:', error);
+            return { success: false };
         }
     }
 
-    /**
-     * Basic Metadata helper
-     */
     async getBusinessAccountInfo(wabaId, accessToken) {
         try {
             const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
             const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
-
             const response = await axios.get(`${WHATSAPP_API_URL}/${wabaId}`, {
-                params: {
-                    fields: 'id,name,timezone_id,message_template_namespace',
-                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-                },
+                params: { fields: 'id,name,timezone_id,message_template_namespace', ...(appsecretProof ? { appsecret_proof: appsecretProof } : {}) },
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             return { success: true, data: response.data };
         } catch (error) {
-            console.error('Get business info error:', error.response?.data || error.message);
-            return {
-                success: false,
-                message: error.response?.data?.error?.message || 'Failed to fetch business info'
-            };
+            return { success: false, message: error.message };
         }
     }
 
@@ -619,94 +604,37 @@ class WhatsAppService {
             const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
             const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
-
             const response = await axios.get(`${WHATSAPP_API_URL}/${phoneNumberId}`, {
-                params: {
-                    fields: 'id,display_phone_number,verified_name,quality_rating',
-                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-                },
+                params: { fields: 'id,display_phone_number,verified_name,quality_rating', ...(appsecretProof ? { appsecret_proof: appsecretProof } : {}) },
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             return { success: true, data: response.data };
         } catch (error) {
-            console.error('Get phone info error:', error.response?.data || error.message);
-            return {
-                success: false,
-                message: error.response?.data?.error?.message || 'Failed to fetch phone info'
-            };
+            return { success: false, message: error.message };
         }
     }
 
-    /**
-     * Create WhatsApp message template in Meta
-     */
     async createTemplate({ wabaId, name, category, language, components, accessToken }) {
         try {
             const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
             const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
-
-            const response = await axios.post(
-                `${WHATSAPP_API_URL}/${wabaId}/message_templates`,
-                {
-                    name,
-                    category,
-                    language,
-                    components,
-                    ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-                },
-                {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }
-            );
-
-            return {
-                success: true,
-                data: response.data
-            };
+            const response = await axios.post(`${WHATSAPP_API_URL}/${wabaId}/message_templates`, { name, category, language, components, ...(appsecretProof ? { appsecret_proof: appsecretProof } : {}) }, { headers: { 'Authorization': `Bearer ${token}` } });
+            return { success: true, data: response.data };
         } catch (error) {
-            console.error('Create template error:', error.response?.data || error.message);
-            let message = error.response?.data?.error?.message || 'Failed to create template';
-
-            // Helpful hint for common ID confusion
-            if (message.includes('Object with ID') && message.includes('does not exist')) {
-                message += " (Tip: Check if you provided a WABA ID instead of a Phone ID, or vice versa)";
-            }
-
-            return {
-                success: false,
-                message
-            };
+            return { success: false, message: error.message };
         }
     }
 
-    /**
-     * Delete WhatsApp message template in Meta
-     */
     async deleteTemplate(wabaId, templateName, accessToken) {
         try {
             const rawToken = accessToken || process.env.WHATSAPP_ACCESS_TOKEN;
             const token = this.cleanToken(rawToken);
             const appsecretProof = this.generateAppSecretProof(token);
-
-            await axios.delete(
-                `${WHATSAPP_API_URL}/${wabaId}/message_templates`,
-                {
-                    params: {
-                        name: templateName,
-                        ...(appsecretProof ? { appsecret_proof: appsecretProof } : {})
-                    },
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }
-            );
-
+            await axios.delete(`${WHATSAPP_API_URL}/${wabaId}/message_templates`, { params: { name: templateName, ...(appsecretProof ? { appsecret_proof: appsecretProof } : {}) }, headers: { 'Authorization': `Bearer ${token}` } });
             return { success: true };
         } catch (error) {
-            console.error('Delete template error:', error.response?.data || error.message);
-            return {
-                success: false,
-                message: error.response?.data?.error?.message || 'Failed to delete template'
-            };
+            return { success: false, message: error.message };
         }
     }
 }
