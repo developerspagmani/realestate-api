@@ -14,6 +14,7 @@ const publicController = {
                 bathrooms,
                 listingType,
                 search,
+                propertyIds,
                 page = 1,
                 limit = 50
             } = req.query;
@@ -44,6 +45,13 @@ const publicController = {
                 where.price = {};
                 if (minPrice) where.price.gte = parseFloat(minPrice);
                 if (maxPrice) where.price.lte = parseFloat(maxPrice);
+            }
+
+            if (propertyIds) {
+                const ids = propertyIds.split(',').filter(id => id.trim());
+                if (ids.length > 0) {
+                    where.id = { in: ids };
+                }
             }
 
             // Keyword search

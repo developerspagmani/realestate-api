@@ -330,6 +330,11 @@ const assignLeadRoundRobin = async (tenantId, leadId) => {
                     lastLeadAssignedAt: new Date(),
                     totalLeads: { increment: 1 }
                 }
+            }),
+            // Also assign any pending bookings for this lead to the same agent
+            prisma.booking.updateMany({
+                where: { leadId: leadId, agentId: null },
+                data: { agentId: selectedAgent.id }
             })
         ]);
 

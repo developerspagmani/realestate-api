@@ -1,4 +1,6 @@
 const { prisma } = require('../config/database');
+const { assignLeadRoundRobin } = require('./agentController');
+const { sendLeadEmail, sendBookingEmail } = require('../utils/emailService');
 
 const websiteController = {
     // Get all websites for the current tenant
@@ -88,7 +90,8 @@ const websiteController = {
                     slug,
                     customDomain: customDomain || null,
                     tenantId: finalTenantId || null,
-                    propertyId: propertyId || null
+                    propertyId: propertyId || null,
+                    propertyIds: req.body.propertyIds || []
                 }
             });
 
@@ -120,7 +123,8 @@ const websiteController = {
                     slug,
                     customDomain: customDomain || null,
                     status,
-                    propertyId: propertyId || null
+                    propertyId: propertyId || null,
+                    propertyIds: req.body.propertyIds || []
                 }
             });
 
@@ -197,13 +201,15 @@ const websiteController = {
                 return res.status(404).json({ success: false, message: 'Website not found or inactive.' });
             }
 
-            const propertyId = website.propertyId || website.configuration.settings?.propertyId;
+            const propertyIds = website.propertyIds && website.propertyIds.length > 0
+                ? website.propertyIds
+                : (website.propertyId ? [website.propertyId] : null);
 
             const properties = await prisma.property.findMany({
                 where: {
                     tenantId: website.tenantId,
                     status: 1,
-                    ...(propertyId ? { id: propertyId } : {})
+                    ...(propertyIds ? { id: { in: propertyIds } } : {})
                 },
                 include: {
                     mainImage: true,
@@ -403,7 +409,44 @@ const websiteController = {
                         updatedAt: new Date()
                     }
                 });
+
+                // Create a booking record if it's a booking request
+                if (isBooking) {
+                    const qrCode = 'BK-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+                    const bStartAt = startAt ? new Date(startAt) : new Date();
+                    const bEndAt = endAt ? new Date(endAt) : new Date(bStartAt.getTime() + 60 * 60 * 1000);
+
+                    await tx.booking.create({
+                        data: {
+                            tenantId: website.tenantId,
+                            propertyId: propertyId || lead.propertyId || null,
+                            unitId: unitId || lead.unitId || null,
+                            leadId: lead.id,
+                            guestName: lead.name,
+                            guestEmail: lead.email,
+                            guestPhone: lead.phone,
+                            userId: lead.userId || null,
+                            startAt: bStartAt,
+                            endAt: bEndAt,
+                            status: 1, // pending
+                            paymentStatus: 1, // pending
+                            qrCode,
+                            notes: `Automated entry from website booking module.\nSource: ${source || 'Website'}`
+                        }
+                    });
+
+                }
             });
+
+            // Auto-assign to agent using Round Robin
+            try {
+                const assignedAgent = await assignLeadRoundRobin(website.tenantId, lead.id);
+                if (assignedAgent) {
+                    console.log(`Lead ${lead.id} auto-assigned to Agent ${assignedAgent.id}`);
+                }
+            } catch (assignError) {
+                console.error('Error in website auto-assignment:', assignError);
+            }
 
             // Trigger workflows
             try {
@@ -412,6 +455,47 @@ const websiteController = {
                 await WorkflowService.triggerWorkflows(website.tenantId, lead.id, triggerType, { websiteId: website.id });
             } catch (wfError) {
                 console.error('Error triggering website workflows:', wfError);
+            }
+
+            // Notifications
+            try {
+                const tenant = await prisma.tenant.findUnique({ where: { id: website.tenantId } });
+                const settings = tenant?.settings || {};
+
+                // Notify Admin if enabled
+                if (settings.notifications?.emailLeads) {
+                    const owner = await prisma.user.findFirst({
+                        where: { tenantId: website.tenantId, role: 3 },
+                        select: { email: true }
+                    });
+                    if (owner) {
+                        await sendLeadEmail(owner.email, lead.name, {
+                            email: lead.email,
+                            phone: lead.phone,
+                            message: lead.notes || notes
+                        });
+                    }
+                }
+
+                // Notify User if it's a booking
+                if (isBooking && (finalEmail || email)) {
+                    const recipientEmail = finalEmail || email;
+                    // Get unit/property details for email
+                    const unit = (unitId || lead.unitId) ? await prisma.unit.findUnique({
+                        where: { id: unitId || lead.unitId },
+                        include: { property: true }
+                    }) : null;
+
+                    await sendBookingEmail(recipientEmail, lead.name, {
+                        unitCode: unit?.unitCode || 'Unit',
+                        propertyName: unit?.property?.title || 'Property',
+                        date: new Date().toLocaleDateString(),
+                        price: 'FREE VISIT',
+                        status: 'Pending Confirmation'
+                    });
+                }
+            } catch (notifError) {
+                console.error('Error in website lead notifications:', notifError);
             }
 
             res.status(201).json({ success: true, data: lead });

@@ -145,7 +145,14 @@ const getUsers = async (req, res) => {
       ];
     }
 
-    if (role) where.role = parseInt(role);
+    if (role) {
+      const requestedRole = parseInt(role);
+      // Non-admins can never see role 2 (Super Admin)
+      where.role = (!isAdmin && requestedRole === 2) ? { not: 2 } : requestedRole;
+    } else if (!isAdmin) {
+      // Default filter for non-admins: hide Super Admins
+      where.role = { not: 2 };
+    }
     if (status) where.status = parseInt(status);
 
     const [users, total] = await Promise.all([
@@ -277,8 +284,9 @@ const createUser = async (req, res) => {
     let userTenantId = tenantId;
 
     if (req.user.role === 3) { // OWNER
-      // Owners can only create USERS (role 1) for their own tenant
-      userRole = 1;
+      // Owners can create USERS (1) or AGENTS (4) for their own tenant
+      const requestedRole = parseInt(role);
+      userRole = (requestedRole === 1 || requestedRole === 4) ? requestedRole : 1;
       userTenantId = req.user.tenantId;
     } else if (req.user.role === 2) { // ADMIN
       // Admins can create any role for any tenant
@@ -295,34 +303,42 @@ const createUser = async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash: hashedPassword,
-        firstName: req.body.firstName,
-        lastName: req.body.lastName,
-        name: name || `${req.body.firstName} ${req.body.lastName}`,
-        phone,
-        companyName: req.body.companyName,
-        website: req.body.website,
-        addressLine1: req.body.addressLine1,
-        addressLine2: req.body.addressLine2,
-        city: req.body.city,
-        state: req.body.state,
-        country: req.body.country,
-        zipCode: req.body.zipCode,
-        role: userRole,
-        tenantId: userTenantId,
-        status: status ? parseInt(status) : 1
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        tenantId: true
+    const user = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: {
+          email,
+          passwordHash: hashedPassword,
+          firstName: req.body.firstName,
+          lastName: req.body.lastName,
+          name: name || `${req.body.firstName} ${req.body.lastName}`,
+          phone,
+          companyName: req.body.companyName,
+          website: req.body.website,
+          addressLine1: req.body.addressLine1,
+          addressLine2: req.body.addressLine2,
+          city: req.body.city,
+          state: req.body.state,
+          country: req.body.country,
+          zipCode: req.body.zipCode,
+          role: userRole,
+          tenantId: userTenantId,
+          status: status ? parseInt(status) : 1
+        }
+      });
+
+      // If role is Agent, also create Agent profile
+      if (userRole === 4) {
+        await tx.agent.create({
+          data: {
+            tenantId: userTenantId,
+            userId: u.id,
+            status: 1, // Active
+            commissionRate: 2.5 // Default
+          }
+        });
       }
+
+      return u;
     });
 
     res.status(201).json({
@@ -358,24 +374,51 @@ const updateUser = async (req, res) => {
       ...(status !== undefined && { status: parseInt(status) }),
     };
 
-    // Only Admin can change role or tenantId
-    if (req.user.role === 2) {
+    // Only Admin or Owner can change role (restricted for Owner)
+    if (req.user.role === 2) { // ADMIN
       if (role !== undefined) data.role = parseInt(role);
       if (tenantId !== undefined) data.tenantId = tenantId;
+    } else if (req.user.role === 3) { // OWNER
+      // Owners can toggle roles between User (1) and Agent (4)
+      if (role !== undefined) {
+        const newRole = parseInt(role);
+        if (newRole === 1 || newRole === 4) {
+          data.role = newRole;
+        }
+      }
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        tenantId: true,
-        updatedAt: true,
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          status: true,
+          tenantId: true,
+          updatedAt: true,
+        }
+      });
+
+      // If user became an agent, ensure they have a profile
+      if (u.role === 4) {
+        const existingAgent = await tx.agent.findFirst({ where: { userId: id } });
+        if (!existingAgent) {
+          await tx.agent.create({
+            data: {
+              userId: id,
+              tenantId: u.tenantId,
+              status: 1,
+              commissionRate: 2.5
+            }
+          });
+        }
       }
+
+      return u;
     });
 
     res.status(200).json({

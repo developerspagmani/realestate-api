@@ -386,8 +386,9 @@ const widgetController = {
                     }
                 });
 
-                // Create a booking record if it's a booking request and we have a unit
-                if (isBooking && unitId) {
+                // Create a booking record if it's a booking request
+                if (isBooking) {
+                    const qrCode = 'BK-' + Math.random().toString(36).substr(2, 9).toUpperCase();
                     const startAt = bodyStartAt ? new Date(bodyStartAt) : new Date();
                     const endAt = bodyEndAt ? new Date(bodyEndAt) : new Date(startAt.getTime() + 60 * 60 * 1000);
 
@@ -396,13 +397,20 @@ const widgetController = {
                             tenantId: widget.tenantId,
                             propertyId: propertyId || null,
                             unitId: unitId || null,
-                            userId: lead.userId || null, // Link to user if lead is already converted
+                            leadId: lead.id,
+                            guestName: lead.name,
+                            guestEmail: lead.email,
+                            guestPhone: lead.phone,
+                            userId: lead.userId || null,
                             startAt: startAt,
                             endAt: endAt,
                             status: 1, // pending
-                            notes: `Automated entry from website booking module.\nLead: ${lead.name}\nEmail: ${lead.email || 'N/A'}\nPhone: ${lead.phone || 'N/A'}`
+                            paymentStatus: 1, // pending
+                            qrCode,
+                            notes: `Automated entry from website booking module.\nSource: ${source || 'Website'}`
                         }
                     });
+
                 }
             });
 

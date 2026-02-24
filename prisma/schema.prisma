@@ -597,6 +597,7 @@ model Website {
   customDomain  String?   @unique @map("custom_domain")
   tenantId      String?   @map("tenant_id") @db.Uuid
   propertyId    String?   @map("property_id") @db.Uuid
+  propertyIds   String[]  @default([]) @map("property_ids")
   name          String
   configuration Json
   status        Int       @default(1)
