@@ -119,51 +119,7 @@ const analyticsController = {
         }
     },
 
-    // 3. Search Trends
-    getSearchTrends: async (req, res) => {
-        try {
-            const { tenantId: queryTenantId } = req.query;
-            const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
 
-            const keywords = {};
-            const cities = {};
-
-            try {
-                const searches = await prisma.leadInteraction.findMany({
-                    where: {
-                        tenantId,
-                        type: { in: ['SEARCH', 'SEARCH_FILTER', 'PROPERTY_VIEW'] }
-                    },
-                    select: { type: true, metadata: true }
-                });
-
-                searches.forEach(s => {
-                    const kw = s.metadata?.keyword?.toLowerCase();
-                    const city = s.metadata?.city;
-                    if (kw) keywords[kw] = (keywords[kw] || 0) + 1;
-                    if (city) cities[city] = (cities[city] || 0) + 1;
-                    if (s.metadata?.propertyType) {
-                        const pt = s.metadata.propertyType.toLowerCase();
-                        keywords[pt] = (keywords[pt] || 0) + 1;
-                    }
-                });
-            } catch (interactionErr) {
-                console.warn('LeadInteraction table not available for search trends:', interactionErr.message);
-            }
-
-            const topKeywords = Object.entries(keywords)
-                .sort((a, b) => b[1] - a[1]).slice(0, 10)
-                .map(([name, count]) => ({ name, count }));
-            const topCities = Object.entries(cities)
-                .sort((a, b) => b[1] - a[1]).slice(0, 10)
-                .map(([name, count]) => ({ name, count }));
-
-            res.json({ success: true, data: { topKeywords, topCities } });
-        } catch (error) {
-            console.error('Search trends error:', error);
-            res.status(500).json({ success: false, message: 'Server error' });
-        }
-    },
 
     // 4. Campaign Performance
     getCampaignPerformance: async (req, res) => {

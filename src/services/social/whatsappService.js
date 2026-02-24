@@ -366,7 +366,7 @@ class WhatsAppService {
                             where: { id: lead.id },
                             data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
                         });
-                        return await this.executeBotStep(nextStep, { lead, phoneNumberId, from, accessToken, businessName });
+                        return await this.executeBotStep(nextStep, { lead, phoneNumberId, from, accessToken, businessName, chatbotConfig });
                     } else {
                         // 🛠️ VIRTUAL STEPS: Support booking even if steps are missing from JSON
                         const virtualSteps = {
@@ -389,7 +389,7 @@ class WhatsAppService {
                                 where: { id: lead.id },
                                 data: { preferences: { ...(lead.preferences || {}), chatbotStepId: nextStepId } }
                             });
-                            return await this.executeBotStep(virtualSteps[nextStepId], { lead, phoneNumberId, from, accessToken, businessName });
+                            return await this.executeBotStep(virtualSteps[nextStepId], { lead, phoneNumberId, from, accessToken, businessName, chatbotConfig });
                         }
 
                         // Fallback: If step is missing and not virtual, reset to start
@@ -400,7 +400,7 @@ class WhatsAppService {
                                 where: { id: lead.id },
                                 data: { preferences: { ...(lead.preferences || {}), chatbotStepId: startStepId } }
                             });
-                            return await this.executeBotStep(startStep, { lead, phoneNumberId, from, accessToken, businessName });
+                            return await this.executeBotStep(startStep, { lead, phoneNumberId, from, accessToken, businessName, chatbotConfig });
                         }
                     }
                 }
@@ -479,6 +479,9 @@ class WhatsAppService {
             if (step.actionType === 'SEARCH_PROPERTIES') {
                 const filters = lead.preferences || {};
                 const properties = await propertyService.searchProperties(filters, lead.tenantId);
+
+                const { upsellEnabled, crossSellEnabled } = context.chatbotConfig || { upsellEnabled: true, crossSellEnabled: true };
+
                 if (properties.length > 0) {
                     await this.sendTextMessage({ phoneNumberId, to: from, text: `Matching properties for you:`, accessToken });
                     for (const prop of properties.slice(0, 3)) {
@@ -493,6 +496,37 @@ class WhatsAppService {
                             accessToken
                         });
                     }
+
+                    // Upsell Logic: Find a premium option among the search results or extra available ones
+                    if (upsellEnabled) {
+                        // Find properties that might be slightly above the budget or higher BHK
+                        const premium = properties.find((p, index) => {
+                            // If index is > 2, it's not shown yet
+                            if (index < 3) return false;
+
+                            const pMaxPrice = Math.max(...(p.units?.flatMap(u => u.unitPricing?.map(up => Number(up.price)) || []) || [0]));
+                            const filterMaxPrice = Number(filters.maxPrice || 0);
+
+                            return (pMaxPrice > filterMaxPrice && pMaxPrice < filterMaxPrice * 1.5) ||
+                                (p.bedrooms > (Number(filters.bedrooms) || 0));
+                        });
+
+                        if (premium) {
+                            const premiumText = `✨ *Premium Suggestion*\nI also found *${premium.title}* which might offer a better experience for you.`;
+                            await this.sendButtonsMessage({
+                                phoneNumberId, to: from, text: premiumText,
+                                buttons: [{ id: `btn_book_${premium.id.substring(0, 8)}`, title: "View Premium" }],
+                                accessToken
+                            });
+                        }
+                    }
+
+                    // Cross-sell Logic
+                    if (crossSellEnabled) {
+                        const crossSellText = `Need help with *Financing*, *Legal Advice*, or *Home Maintenance*? 🏠\nOur team of experts is ready to assist you!`;
+                        await this.sendTextMessage({ phoneNumberId, to: from, text: crossSellText, accessToken });
+                    }
+
                     await this.sendButtonsMessage({
                         phoneNumberId, to: from, text: "Would you like more options?",
                         buttons: [{ id: 'talk_agent', title: "Talk to Agent" }, { id: 'more_props', title: "Show More" }],

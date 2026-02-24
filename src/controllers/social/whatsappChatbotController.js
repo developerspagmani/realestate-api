@@ -118,7 +118,7 @@ const getBotConfig = async (req, res) => {
 const updateBotConfig = async (req, res) => {
     try {
         const tenantId = req.tenant?.id || req.user?.tenantId;
-        const { isActive, steps, startStepId } = req.body;
+        const { isActive, steps, startStepId, upsellEnabled, crossSellEnabled } = req.body;
 
         const config = await prisma.whatsAppChatbot.upsert({
             where: { tenantId },
@@ -126,13 +126,17 @@ const updateBotConfig = async (req, res) => {
                 isActive,
                 steps,
                 startStepId,
+                upsellEnabled: upsellEnabled !== undefined ? upsellEnabled : true,
+                crossSellEnabled: crossSellEnabled !== undefined ? crossSellEnabled : true,
                 updatedAt: new Date()
             },
             create: {
                 tenantId,
                 isActive,
                 steps,
-                startStepId
+                startStepId,
+                upsellEnabled: upsellEnabled !== undefined ? upsellEnabled : true,
+                crossSellEnabled: crossSellEnabled !== undefined ? crossSellEnabled : true
             }
         });
 
