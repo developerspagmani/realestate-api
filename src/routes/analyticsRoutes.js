@@ -13,5 +13,6 @@ router.get('/agent-performance', analyticsController.getAgentPerformance);
 router.get('/search-trends', analyticsController.getSearchTrends);
 router.get('/campaign-stats', analyticsController.getCampaignPerformance);
 router.get('/marketing-insights', analyticsController.getMarketingInsights);
+router.get('/demand-intelligence', analyticsController.getDemandIntelligence);
 
 module.exports = router;

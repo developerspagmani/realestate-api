@@ -34,7 +34,7 @@ const getEnrollments = async (req, res) => {
                     select: { id: true, name: true, email: true, leadScore: true }
                 },
                 logs: {
-                    take: 5,
+                    take: 10,
                     orderBy: { occurredAt: 'desc' }
                 }
             }
@@ -45,8 +45,33 @@ const getEnrollments = async (req, res) => {
     }
 };
 
+const getEnrollmentLogs = async (req, res) => {
+    try {
+        const { id } = req.params; // Enrollment ID
+        const logs = await prisma.workflowLog.findMany({
+            where: { enrollmentId: id },
+            orderBy: { occurredAt: 'desc' }
+        });
+        res.status(200).json({ success: true, data: logs });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+const testWorkflowExecution = async (req, res) => {
+    try {
+        const { workflow, testLead } = req.body;
+        const result = await WorkflowService.testWorkflow(workflow, testLead);
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     runWorkflows,
     enrollInWorkflow,
-    getEnrollments
+    getEnrollments,
+    getEnrollmentLogs,
+    testWorkflowExecution
 };

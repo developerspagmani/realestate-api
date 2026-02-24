@@ -1,4 +1,5 @@
 const { prisma } = require('../../config/database');
+const { sendTemplateEmail } = require('../../utils/emailService');
 
 class WorkflowService {
     /**
@@ -18,32 +19,25 @@ class WorkflowService {
             }
 
             const workflow = await prisma.marketingWorkflow.findUnique({ where: { id: workflowId } });
-            if (!workflow || workflow.status !== 1) {
-                console.log(`[WorkflowService] Workflow ${workflowId} not found or inactive`);
-                return null;
-            }
+            if (!workflow) return null;
 
-            // Find start node
             const steps = typeof workflow.steps === 'string' ? JSON.parse(workflow.steps) : workflow.steps;
-            console.log(`[WorkflowService] Workflow has ${steps?.length || 0} steps`);
-
-            const startStep = steps.find(s => s.type === 'START') || (steps && steps.length > 0 ? steps[0] : null);
-            console.log(`[WorkflowService] Start step ID: ${startStep?.id}`);
+            const firstStepId = steps && steps.length > 0 ? steps[0].id : null;
 
             const enrollment = await prisma.workflowEnrollment.create({
                 data: {
                     workflowId,
                     leadId,
-                    currentStep: startStep?.id,
-                    status: 1, // Active
-                    nextActionAt: new Date() // Process immediately
+                    currentStep: firstStepId,
+                    status: 1,
+                    nextActionAt: new Date()
                 }
             });
-            console.log(`[WorkflowService] Successfully enrolled lead ${leadId}. Enrollment ID: ${enrollment.id}`);
+
             return enrollment;
         } catch (error) {
             console.error('Enroll lead error:', error);
-            return null;
+            throw error;
         }
     }
 
@@ -74,7 +68,11 @@ class WorkflowService {
                     'Match Found': 'MATCH_FOUND',
                     'MATCH_FOUND': 'MATCH_FOUND',
                     'Property Added': 'PROPERTY_ADDED',
-                    'PROPERTY_ADDED': 'PROPERTY_ADDED'
+                    'PROPERTY_ADDED': 'PROPERTY_ADDED',
+                    'Form Submitted': 'FORM_SUBMITTED',
+                    'FORM_SUBMITTED': 'FORM_SUBMITTED',
+                    'Tag Added': 'TAG_ADDED',
+                    'TAG_ADDED': 'TAG_ADDED'
                 };
 
                 const workflowTriggerType = triggerMapping[trigger.type] || trigger.type;
@@ -108,19 +106,31 @@ class WorkflowService {
      * Process active enrollments (Main Engine)
      */
     static async processWorkflows() {
-        const activeEnrollments = await prisma.workflowEnrollment.findMany({
-            where: {
-                status: 1,
-                nextActionAt: { lte: new Date() }
-            },
-            include: {
-                workflow: true,
-                lead: true
-            }
-        });
+        console.log(`[WorkflowService] Checking for active workflow enrollments at ${new Date().toISOString()}...`);
+        try {
+            const activeEnrollments = await prisma.workflowEnrollment.findMany({
+                where: {
+                    status: 1,
+                    nextActionAt: { lte: new Date() }
+                },
+                include: {
+                    workflow: true,
+                    lead: true
+                }
+            });
 
-        for (const enrollment of activeEnrollments) {
-            await this.processStep(enrollment);
+            if (activeEnrollments.length > 0) {
+                console.log(`[WorkflowService] Found ${activeEnrollments.length} enrollments to process.`);
+                for (const enrollment of activeEnrollments) {
+                    try {
+                        await this.processStep(enrollment);
+                    } catch (stepError) {
+                        console.error(`[WorkflowService] Error processing enrollment ${enrollment.id}:`, stepError);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[WorkflowService] Process workflows error:', error);
         }
     }
 
@@ -165,6 +175,7 @@ class WorkflowService {
 
         const currentStep = this.findStep(steps, enrollment.currentStep);
         if (!currentStep) {
+            console.log(`[WorkflowService] Step ${enrollment.currentStep} not found for enrollment ${enrollment.id}. Completing workflow.`);
             await prisma.workflowEnrollment.update({
                 where: { id: enrollment.id },
                 data: { status: 2 } // Completed
@@ -172,25 +183,24 @@ class WorkflowService {
             return;
         }
 
-        // Execute action based on step type
-        let actionResult = { success: true };
+        console.log(`[WorkflowService] Processing ${currentStep.type} step for lead ${enrollment.lead.email || enrollment.leadId}`);
+
         let nextStepId = this.findNextStepId(steps, currentStep.id);
         if (nextStepId === undefined) nextStepId = null;
 
         let delaySeconds = 0;
+        let actionResult = { success: true, message: '' };
 
         try {
             switch (currentStep.type) {
                 case 'EMAIL':
-                    if (currentStep.templateId) {
+                    if (currentStep.templateId && enrollment.lead.email) {
                         const template = await prisma.emailTemplate.findUnique({
                             where: { id: currentStep.templateId }
                         });
 
-                        if (template && enrollment.lead.email) {
-                            const { sendTemplateEmail } = require('../../utils/emailService');
+                        if (template) {
                             const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
-
                             let customizedContent = template.content;
                             let subject = template.subject || 'Special Update';
 
@@ -212,9 +222,15 @@ class WorkflowService {
                             customizedContent += `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`;
 
                             await sendTemplateEmail(enrollment.lead.email, subject, customizedContent);
+                            actionResult.message = `Sent email: ${template.name}`;
+                        } else {
+                            actionResult.success = false;
+                            actionResult.message = `Template ${currentStep.templateId} not found.`;
                         }
+                    } else {
+                        actionResult.success = false;
+                        actionResult.message = !currentStep.templateId ? "No template ID provided." : "Lead has no email address.";
                     }
-                    console.log(`Sending tracked email ${currentStep.templateId} to ${enrollment.lead.email}`);
                     break;
 
                 case 'DELAY':
@@ -222,6 +238,7 @@ class WorkflowService {
                     const unit = currentStep.unit || 'hours';
                     const multiplier = { 'minutes': 60, 'hours': 3600, 'days': 86400 };
                     delaySeconds = duration * (multiplier[unit] || 3600);
+                    actionResult.message = `Delayed for ${duration} ${unit}`;
                     break;
 
                 case 'CONDITION':
@@ -241,7 +258,7 @@ class WorkflowService {
 
                     const branch = conditionMet ? currentStep.yesSteps : currentStep.noSteps;
                     nextStepId = branch && branch.length > 0 ? branch[0].id : nextStepId;
-                    // Note: if branch is empty, it continues with the sibling nextStepId (if any)
+                    actionResult.message = `Condition ${field} ${operator} ${targetValue} evaluated to ${conditionMet}`;
                     break;
 
                 case 'TAG':
@@ -259,44 +276,55 @@ class WorkflowService {
                             where: { id: enrollment.leadId },
                             data: { tags: newTags.join(',') }
                         });
+                        actionResult.message = `${currentStep.action === 'add' ? 'Added' : 'Removed'} tag: ${currentStep.tag}`;
                     }
                     break;
 
                 case 'ASSIGN':
                     if (currentStep.agentId) {
-                        if (currentStep.agentId === 'auto') {
-                            const { assignLeadRoundRobin } = require('../../controllers/agentController');
-                            await assignLeadRoundRobin(enrollment.workflow.tenantId, enrollment.leadId);
-                        } else {
-                            await prisma.agentLead.updateMany({
-                                where: { leadId: enrollment.leadId, status: 1 },
-                                data: { status: 2 }
-                            });
-                            await prisma.agentLead.create({
-                                data: {
-                                    agentId: currentStep.agentId,
-                                    leadId: enrollment.leadId,
-                                    isPrimary: true,
-                                    status: 1
-                                }
-                            });
+                        try {
+                            // Using a direct assignment instead of circular dependency
+                            if (currentStep.agentId === 'auto') {
+                                // Round Robin logic is usually in agentService, we can replicate or import carefully
+                                // For now, let's assume we can import it
+                                const { assignLeadRoundRobin } = require('../../controllers/agentController');
+                                await assignLeadRoundRobin(enrollment.workflow.tenantId, enrollment.leadId);
+                            } else {
+                                await prisma.agentLead.updateMany({
+                                    where: { leadId: enrollment.leadId, status: 1 },
+                                    data: { status: 2 } // Mark old as inactive
+                                });
+                                await prisma.agentLead.create({
+                                    data: {
+                                        agentId: currentStep.agentId,
+                                        leadId: enrollment.leadId,
+                                        isPrimary: true,
+                                        status: 1
+                                    }
+                                });
+                            }
+                            actionResult.message = `Assigned lead to agent: ${currentStep.agentId}`;
+                        } catch (err) {
+                            actionResult.success = false;
+                            actionResult.message = `Assignment failed: ${err.message}`;
                         }
                     }
                     break;
             }
 
-            // Log action
+            // Record Log
             await prisma.workflowLog.create({
                 data: {
                     enrollmentId: enrollment.id,
                     stepId: currentStep.id,
                     actionType: currentStep.type,
-                    status: 'SUCCESS',
-                    result: actionResult
+                    status: actionResult.success ? 'SUCCESS' : 'FAILED',
+                    result: actionResult,
+                    tenantId: enrollment.workflow.tenantId
                 }
             });
 
-            // Update enrollment for next step
+            // Update Enrollment
             await prisma.workflowEnrollment.update({
                 where: { id: enrollment.id },
                 data: {
@@ -307,8 +335,144 @@ class WorkflowService {
             });
 
         } catch (error) {
-            console.error(`Error processing step ${currentStep.id}:`, error);
+            console.error(`[WorkflowService] Error processing step ${currentStep.id}:`, error);
+            try {
+                await prisma.workflowLog.create({
+                    data: {
+                        enrollmentId: enrollment.id,
+                        stepId: currentStep.id,
+                        actionType: currentStep.type,
+                        status: 'ERROR',
+                        result: { error: error.message },
+                        tenantId: enrollment.workflow.tenantId
+                    }
+                });
+            } catch (logErr) {
+                console.error('[WorkflowService] Failed to record error log:', logErr);
+            }
         }
+    }
+
+    /**
+     * Test a workflow simulation (DRY RUN)
+     */
+    static async testWorkflow(workflowData, testLeadData) {
+        const logs = [];
+        const steps = typeof workflowData.steps === 'string' ? JSON.parse(workflowData.steps) : workflowData.steps;
+
+        let currentStepId = steps && steps.length > 0 ? steps[0].id : null;
+        let iterations = 0;
+        const maxIterations = 50; // Safety cap
+
+        logs.push({
+            type: 'INFO',
+            message: `Starting test simulation for workflow: ${workflowData.name}`,
+            occurredAt: new Date()
+        });
+
+        while (currentStepId && iterations < maxIterations) {
+            iterations++;
+            const currentStep = this.findStep(steps, currentStepId);
+
+            if (!currentStep) {
+                logs.push({ type: 'INFO', message: 'No more steps found. Workflow complete.', occurredAt: new Date() });
+                break;
+            }
+
+            let stepLog = {
+                stepId: currentStep.id,
+                type: currentStep.type,
+                status: 'EXECUTED',
+                occurredAt: new Date()
+            };
+
+            let nextStepId = this.findNextStepId(steps, currentStep.id);
+            if (nextStepId === undefined) nextStepId = null;
+
+            try {
+                switch (currentStep.type) {
+                    case 'EMAIL':
+                        if (currentStep.templateId && testLeadData.email) {
+                            const template = await prisma.emailTemplate.findUnique({
+                                where: { id: currentStep.templateId }
+                            });
+
+                            if (template) {
+                                let customizedContent = template.content;
+                                let subject = `[TEST] ${template.subject || 'Special Update'}`;
+
+                                // Basic personalization for test
+                                const name = testLeadData.name || 'Test User';
+                                customizedContent = customizedContent.replace(/{{name}}/gi, name);
+                                subject = subject.replace(/{{name}}/gi, name);
+
+                                await sendTemplateEmail(testLeadData.email, subject, customizedContent);
+                                stepLog.message = `[TEST EMAIL SENT] Sent template "${template.name}" to ${testLeadData.email}`;
+                            } else {
+                                stepLog.message = `[ERROR] Email template ${currentStep.templateId} not found`;
+                                stepLog.status = 'ERROR';
+                            }
+                        } else {
+                            stepLog.message = `[SIMULATED] Would send email template ${currentStep.templateId} to ${testLeadData.email || 'N/A'}`;
+                        }
+                        break;
+
+                    case 'DELAY':
+                        stepLog.message = `[SIMULATED] Wait for ${currentStep.duration} ${currentStep.unit}`;
+                        break;
+
+                    case 'CONDITION':
+                        const { field, operator, value: targetValue } = currentStep;
+                        const leadValue = testLeadData[field];
+                        let conditionMet = false;
+
+                        const valStr = String(leadValue || '').toLowerCase();
+                        const targetStr = String(targetValue || '').toLowerCase();
+
+                        switch (operator) {
+                            case 'equals': conditionMet = valStr === targetStr; break;
+                            case 'greater_than': conditionMet = Number(leadValue) > Number(targetValue); break;
+                            case 'contains': conditionMet = valStr.includes(targetStr); break;
+                            case 'not_empty': conditionMet = !!leadValue; break;
+                        }
+
+                        stepLog.message = `Condition check: ${field} (${leadValue}) ${operator} ${targetValue} => ${conditionMet ? 'YES' : 'NO'}`;
+                        const branch = conditionMet ? currentStep.yesSteps : currentStep.noSteps;
+                        nextStepId = branch && branch.length > 0 ? branch[0].id : nextStepId;
+                        break;
+
+                    case 'TAG':
+                        stepLog.message = `[SIMULATED] ${currentStep.action === 'add' ? 'Add' : 'Remove'} Tag: ${currentStep.tag}`;
+                        break;
+
+                    case 'ASSIGN':
+                        stepLog.message = `[SIMULATED] Assign to agent: ${currentStep.agentId}`;
+                        break;
+
+                    default:
+                        stepLog.message = `Unknown step type: ${currentStep.type}`;
+                }
+
+                logs.push(stepLog);
+                currentStepId = nextStepId;
+
+            } catch (error) {
+                logs.push({
+                    stepId: currentStep.id,
+                    type: currentStep.type,
+                    status: 'ERROR',
+                    message: `Error: ${error.message}`,
+                    occurredAt: new Date()
+                });
+                break;
+            }
+        }
+
+        if (iterations >= maxIterations) {
+            logs.push({ type: 'WARNING', message: 'Maximum iterations reached. Possible infinite loop in workflow logic.', occurredAt: new Date() });
+        }
+
+        return { success: true, logs };
     }
 }
 

@@ -419,6 +419,304 @@ const analyticsController = {
                 error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
+    },
+
+    // 6. Demand Intelligence — keywords, features, price gaps, shortages
+    getDemandIntelligence: async (req, res) => {
+        try {
+            const { tenantId: queryTenantId, startDate, endDate } = req.query;
+            let tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+
+            if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+                return res.status(400).json({ success: false, message: 'Valid Tenant ID required' });
+            }
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
+            if (!isUuid) return res.status(400).json({ success: false, message: 'Invalid Tenant ID format' });
+
+            const dateFilter = {};
+            if (startDate && !isNaN(new Date(startDate).getTime())) dateFilter.gte = new Date(startDate);
+            if (endDate && !isNaN(new Date(endDate).getTime())) dateFilter.lte = new Date(endDate);
+
+            // ── Pull all interactions ──────────────────────────────────────────
+            let interactions = [];
+            try {
+                const where = {
+                    tenantId,
+                    type: { in: ['SEARCH', 'SEARCH_FILTER', 'PROPERTY_VIEW', 'PROPERTY_DETAIL_VIEW'] }
+                };
+                if (Object.keys(dateFilter).length > 0) where.occurredAt = dateFilter;
+                interactions = await prisma.leadInteraction.findMany({
+                    where,
+                    select: { type: true, metadata: true, occurredAt: true }
+                });
+            } catch (e) {
+                console.warn('leadInteraction not available:', e.message);
+            }
+
+            // ── Pull inventory once ────────────────────────────────────────────
+            const properties = await prisma.property.findMany({
+                where: { tenantId },
+                select: {
+                    city: true, price: true, propertyType: true,
+                    bedrooms: true, bathrooms: true, title: true,
+                    propertyAmenities: {
+                        select: {
+                            amenity: {
+                                select: { name: true }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const propTypeMap = {
+                1: 'Apartment', 2: 'Villa', 3: 'Townhouse', 4: 'Land',
+                5: 'Commercial', 6: 'Office', 7: 'Duplex', 8: 'Penthouse'
+            };
+            const getTypeName = (val) => propTypeMap[val] || String(val || '');
+
+            const keywords = {}; // raw keyword freq
+            const features = {}; // bedrooms/amenity features searched
+            const propTypes = {}; // propertyType demand
+            const cityDemand = {}; // city search freq
+            const budgets = []; // price/budget points
+            const trendMap = {}; // date → count (daily searches)
+
+            interactions.forEach(i => {
+                const m = i.metadata || {};
+                const day = i.occurredAt ? new Date(i.occurredAt).toISOString().split('T')[0] : null;
+                if (day) trendMap[day] = (trendMap[day] || 0) + 1;
+
+                if (i.type === 'SEARCH' || i.type === 'SEARCH_FILTER') {
+                    // Keywords
+                    const kw = m.keyword?.toLowerCase()?.trim();
+                    if (kw) keywords[kw] = (keywords[kw] || 0) + 1;
+
+                    // Property type demand
+                    if (m.propertyType) {
+                        const pt = m.propertyType.toLowerCase();
+                        propTypes[pt] = (propTypes[pt] || 0) + 1;
+                        // also count as keyword
+                        keywords[pt] = (keywords[pt] || 0) + 1;
+                    }
+
+                    // Bedroom demand
+                    if (m.bedrooms !== undefined && m.bedrooms !== null) {
+                        const bk = `${m.bedrooms} Bedroom${m.bedrooms > 1 ? 's' : ''}`;
+                        features[bk] = (features[bk] || 0) + 1;
+                    }
+
+                    // Feature / amenity tags in search
+                    const featureTags = Array.isArray(m.features) ? m.features
+                        : typeof m.features === 'string' ? [m.features] : [];
+                    featureTags.forEach(f => {
+                        const fk = f.toLowerCase();
+                        features[fk] = (features[fk] || 0) + 1;
+                    });
+
+                    // City
+                    if (m.city) cityDemand[m.city] = (cityDemand[m.city] || 0) + 1;
+
+                    // Budget
+                    const price = parseFloat(m.price || m.budget || m.maxPrice);
+                    if (!isNaN(price) && price > 0) budgets.push(price);
+                }
+            });
+
+            // ── Supply indexes ─────────────────────────────────────────────────
+            const supplyByCity = {};
+            const supplyByType = {};
+            const supplyByBedrooms = {};
+            const allAmenities = {}; // what amenities exist in inventory
+            const priceList = [];
+
+            properties.forEach(p => {
+                const typeName = getTypeName(p.propertyType);
+                if (p.city) supplyByCity[p.city.toLowerCase()] = (supplyByCity[p.city.toLowerCase()] || 0) + 1;
+                if (p.propertyType) supplyByType[typeName.toLowerCase()] = (supplyByType[typeName.toLowerCase()] || 0) + 1;
+                if (p.bedrooms !== null && p.bedrooms !== undefined) {
+                    const bk = `${p.bedrooms} Bedroom${p.bedrooms > 1 ? 's' : ''}`;
+                    supplyByBedrooms[bk] = (supplyByBedrooms[bk] || 0) + 1;
+                }
+                const ams = (p.propertyAmenities || []).map(pa => pa.amenity?.name).filter(Boolean);
+                ams.forEach(a => { allAmenities[a.toLowerCase()] = (allAmenities[a.toLowerCase()] || 0) + 1; });
+                const pr = parseFloat(p.price || 0);
+                if (!isNaN(pr) && pr > 0) priceList.push(pr);
+            });
+
+            const totalSupply = properties.length;
+            const avgBudget = budgets.length > 0 ? budgets.reduce((a, b) => a + b, 0) / budgets.length : 0;
+            const avgSupplyPrice = priceList.length > 0 ? priceList.reduce((a, b) => a + b, 0) / priceList.length : 0;
+
+            // ── Keyword shortage report ────────────────────────────────────────
+            const keywordShortages = Object.entries(keywords)
+                .sort((a, b) => b[1] - a[1])
+                .map(([keyword, demandCount]) => {
+                    // estimate how many properties match this keyword (title / type)
+                    const matchingSupply = properties.filter(p =>
+                        (p.title || '').toLowerCase().includes(keyword) ||
+                        getTypeName(p.propertyType).toLowerCase().includes(keyword)
+                    ).length;
+                    const gap = demandCount - matchingSupply;
+                    const severity = gap > demandCount * 0.8 ? 'Critical' : gap > demandCount * 0.5 ? 'High' : gap > 0 ? 'Medium' : 'None';
+                    return { keyword, demandCount, matchingSupply, gap: Math.max(0, gap), severity };
+                })
+                .filter(k => k.gap > 0)
+                .slice(0, 20);
+
+            // ── Feature shortage report ────────────────────────────────────────
+            const featureShortages = Object.entries(features)
+                .sort((a, b) => b[1] - a[1])
+                .map(([feature, demandCount]) => {
+                    // For bedroom features, cross-check supplyByBedrooms
+                    const bedroomKey = Object.keys(supplyByBedrooms).find(k => k.toLowerCase() === feature.toLowerCase());
+                    const matchingSupply = bedroomKey
+                        ? supplyByBedrooms[bedroomKey]
+                        : (allAmenities[feature.toLowerCase()] || 0);
+                    const gap = Math.max(0, demandCount - matchingSupply);
+                    const severity = gap > demandCount * 0.8 ? 'Critical' : gap > demandCount * 0.5 ? 'High' : gap > 0 ? 'Medium' : 'None';
+                    return { feature, demandCount, matchingSupply, gap, severity };
+                })
+                .filter(f => f.gap > 0)
+                .slice(0, 15);
+
+            // ── City shortage report ───────────────────────────────────────────
+            const cityShortages = Object.entries(cityDemand)
+                .sort((a, b) => b[1] - a[1])
+                .map(([city, demandCount]) => {
+                    const supply = supplyByCity[city.toLowerCase()] || 0;
+                    const ratio = supply > 0 ? demandCount / supply : demandCount;
+                    const gap = Math.max(0, demandCount - supply);
+                    const severity = ratio > 10 ? 'Critical' : ratio > 5 ? 'High' : ratio > 2 ? 'Medium' : 'Balanced';
+                    return { city, demandCount, supply, ratio: parseFloat(ratio.toFixed(2)), gap, severity };
+                });
+
+            // ── Property type shortage ─────────────────────────────────────────
+            const typeShortages = Object.entries(propTypes)
+                .sort((a, b) => b[1] - a[1])
+                .map(([type, demandCount]) => {
+                    const supply = supplyByType[type.toLowerCase()] || 0;
+                    const gap = Math.max(0, demandCount - supply);
+                    const severity = gap > demandCount * 0.8 ? 'Critical' : gap > demandCount * 0.5 ? 'High' : gap > 0 ? 'Medium' : 'Balanced';
+                    return { type, demandCount, supply, gap, severity };
+                });
+
+            // ── Price bracket analysis ─────────────────────────────────────────
+            const brackets = [
+                { label: 'Under $200K', min: 0, max: 200000 },
+                { label: '$200K–$500K', min: 200000, max: 500000 },
+                { label: '$500K–$1M', min: 500000, max: 1000000 },
+                { label: '$1M–$2M', min: 1000000, max: 2000000 },
+                { label: 'Over $2M', min: 2000000, max: Infinity }
+            ];
+            const priceBrackets = brackets.map(b => {
+                const demand = budgets.filter(p => p >= b.min && p < b.max).length;
+                const supply = priceList.filter(p => p >= b.min && p < b.max).length;
+                const gap = Math.max(0, demand - supply);
+                return { label: b.label, demand, supply, gap };
+            });
+
+            // ── AI recommendations ─────────────────────────────────────────────
+            const recommendations = [];
+
+            // Top keyword shortage
+            if (keywordShortages.length > 0) {
+                const top = keywordShortages[0];
+                recommendations.push({
+                    priority: 'HIGH',
+                    type: 'KEYWORD_SHORTAGE',
+                    title: `High demand for "${top.keyword}"`,
+                    detail: `"${top.keyword}" was searched ${top.demandCount} times but only ${top.matchingSupply} matching properties exist. Consider adding ${Math.ceil(top.gap / 2)} more listings that match this keyword.`,
+                    impact: 'Revenue',
+                    action: `Add properties matching "${top.keyword}"`
+                });
+            }
+
+            // Top feature shortage
+            if (featureShortages.length > 0) {
+                const top = featureShortages[0];
+                recommendations.push({
+                    priority: 'HIGH',
+                    type: 'FEATURE_SHORTAGE',
+                    title: `Feature gap: "${top.feature}"`,
+                    detail: `Buyers searched "${top.feature}" ${top.demandCount} times but only ${top.matchingSupply} properties offer it. Gap of ${top.gap} unfulfilled searches.`,
+                    impact: 'Lead Conversion',
+                    action: `List more properties with "${top.feature}" or highlight this in existing listings`
+                });
+            }
+
+            // Top city shortage
+            const criticalCities = cityShortages.filter(c => c.severity === 'Critical' || c.severity === 'High');
+            if (criticalCities.length > 0) {
+                const top = criticalCities[0];
+                recommendations.push({
+                    priority: 'CRITICAL',
+                    type: 'CITY_SHORTAGE',
+                    title: `Inventory shortage in ${top.city}`,
+                    detail: `${top.demandCount} searches for properties in ${top.city} but only ${top.supply} listings. Demand-to-supply ratio: ${top.ratio}x.`,
+                    impact: 'Market Share',
+                    action: `Expand inventory in ${top.city} — target ${top.gap} new listings`
+                });
+            }
+
+            // Price gap
+            if (avgBudget > 0 && avgSupplyPrice > 0) {
+                const diff = Math.abs(avgBudget - avgSupplyPrice);
+                const pct = (diff / avgSupplyPrice) * 100;
+                if (pct > 15) {
+                    recommendations.push({
+                        priority: 'MEDIUM',
+                        type: 'PRICE_GAP',
+                        title: `Price mismatch: ${pct.toFixed(0)}% gap`,
+                        detail: `Avg buyer budget is $${Math.round(avgBudget).toLocaleString()} but avg listing price is $${Math.round(avgSupplyPrice).toLocaleString()}. Buyers are ${avgBudget < avgSupplyPrice ? 'priced out' : 'willing to spend more'}.`,
+                        impact: 'Conversion Rate',
+                        action: avgBudget < avgSupplyPrice
+                            ? 'Consider adding more affordable listings or promoting flexible payment plans'
+                            : 'Your inventory is priced below market — consider premium listing opportunities'
+                    });
+                }
+            }
+
+            // Trend data for chart (last 30 days filled)
+            const trendStart = new Date();
+            trendStart.setDate(trendStart.getDate() - 29);
+            const trend = [];
+            for (let i = 0; i < 30; i++) {
+                const d = new Date(trendStart);
+                d.setDate(d.getDate() + i);
+                const key = d.toISOString().split('T')[0];
+                trend.push({ date: key, searches: trendMap[key] || 0 });
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    summary: {
+                        totalSearches: interactions.filter(i => i.type === 'SEARCH' || i.type === 'SEARCH_FILTER').length,
+                        totalPropertyViews: interactions.filter(i => i.type.includes('PROPERTY')).length,
+                        totalInventory: totalSupply,
+                        avgBuyerBudget: Math.round(avgBudget),
+                        avgListingPrice: Math.round(avgSupplyPrice),
+                        uniqueKeywords: Object.keys(keywords).length,
+                        uniqueCitiesSearched: Object.keys(cityDemand).length
+                    },
+                    keywordShortages,
+                    featureShortages,
+                    cityShortages,
+                    typeShortages,
+                    priceBrackets,
+                    recommendations,
+                    trend
+                }
+            });
+        } catch (error) {
+            console.error('Demand intelligence error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error fetching demand intelligence',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
     }
 };
 

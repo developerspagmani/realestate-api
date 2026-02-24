@@ -19,7 +19,8 @@ const getAllLeads = async (req, res) => {
       sortOrder = 'desc',
       tenantId: queryTenantId,
       ownerId,
-      industryType
+      industryType,
+      tag
     } = req.query;
 
     const isAdmin = req.user.role === 2;
@@ -80,6 +81,19 @@ const getAllLeads = async (req, res) => {
       where.source = sourceMap[source.toLowerCase()] || parseInt(source);
     }
 
+    if (tag && tag !== 'all') {
+      if (tag.startsWith('Workflow: ')) {
+        const wfName = tag.replace('Workflow: ', '');
+        where.enrollments = {
+          some: {
+            workflow: { name: wfName },
+            status: 1 // Active enrollments
+          }
+        };
+      } else {
+        where.tags = { contains: tag, mode: 'insensitive' };
+      }
+    }
     if (priority && priority !== 'all') where.priority = parseInt(priority);
 
     if (startDate || endDate) {
@@ -105,9 +119,18 @@ const getAllLeads = async (req, res) => {
           budget: true,
           leadScore: true,
           notes: true,
+          tags: true, // ADDED
           userId: true,
           createdAt: true,
           updatedAt: true,
+          enrollments: { // ADDED: show active workflows
+            where: { status: 1 },
+            include: {
+              workflow: {
+                select: { name: true }
+              }
+            }
+          },
           unit: {
             select: {
               id: true,

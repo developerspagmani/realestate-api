@@ -29,7 +29,7 @@ const {
 } = require('../controllers/formBuilderController');
 const { getCampaignStats } = require('../controllers/campaignController');
 const { trackInteraction, getLeadInteractions } = require('../controllers/interactionController');
-const { runWorkflows, enrollInWorkflow, getEnrollments } = require('../controllers/workflowExecutionController');
+const { runWorkflows, enrollInWorkflow, getEnrollments, getEnrollmentLogs, testWorkflowExecution } = require('../controllers/workflowExecutionController');
 const {
     getLeadRecommendations,
     sendRecommendationEmailDirectly
@@ -80,6 +80,8 @@ router.get('/interactions/:id', getLeadInteractions);
 router.post('/workflows/process', runWorkflows);
 router.post('/workflows/enroll', enrollInWorkflow);
 router.get('/workflows/:id/enrollments', getEnrollments);
+router.get('/workflows/enrollments/:id/logs', getEnrollmentLogs);
+router.post('/workflows/test', testWorkflowExecution);
 
 // AI Recommendation Routes
 router.get('/recommendations/:id', getLeadRecommendations);

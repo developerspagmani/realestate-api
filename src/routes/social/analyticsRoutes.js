@@ -17,4 +17,7 @@ router.get('/properties', analyticsController.getPropertyAnalytics);
 // Get engagement metrics
 router.get('/engagement', analyticsController.getEngagementMetrics);
 
+// AI-powered forecast (linear regression on last 30 days)
+router.get('/forecast', analyticsController.getForecast);
+
 module.exports = router;
