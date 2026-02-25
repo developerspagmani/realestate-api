@@ -32,6 +32,7 @@ module.exports = {
         categoryId: Joi.string().uuid().optional().allow('', null),
         videoUrl: Joi.string().uri().optional().allow('', null),
         displayPrice: Joi.boolean().optional(),
+        price: Joi.number().optional().allow(null),
         metadata: Joi.any().optional()
     }),
 
@@ -66,6 +67,7 @@ module.exports = {
         categoryId: Joi.string().uuid().optional().allow('', null),
         videoUrl: Joi.string().uri().optional().allow('', null),
         displayPrice: Joi.boolean().optional(),
+        price: Joi.number().optional().allow(null),
         metadata: Joi.any().optional()
     }),
 

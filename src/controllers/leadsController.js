@@ -50,11 +50,12 @@ const getAllLeads = async (req, res) => {
 
     if (effectiveOwnerId) {
       // Check if user has any specific property access defined
-      const hasAccessRecords = await prisma.userPropertyAccess.count({
-        where: { userId: effectiveOwnerId, tenantId }
+      const accessRecord = await prisma.userPropertyAccess.findFirst({
+        where: { userId: effectiveOwnerId, tenantId },
+        select: { id: true }
       });
 
-      if (hasAccessRecords > 0) {
+      if (accessRecord) {
         const accessFilter = {
           userPropertyAccess: {
             some: { userId: effectiveOwnerId }
@@ -621,21 +622,15 @@ const getLeadStats = async (req, res) => {
     }
 
     const [
-      totalLeads,
-      newLeads,
-      contactedLeads,
-      qualifiedLeads,
-      convertedLeads,
-      lostLeads,
+      statusGroups,
       leadsBySource,
       leadsByPriority
     ] = await Promise.all([
-      prisma.lead.count({ where }),
-      prisma.lead.count({ where: { ...where, status: 1 } }),
-      prisma.lead.count({ where: { ...where, status: 2 } }),
-      prisma.lead.count({ where: { ...where, status: 3 } }),
-      prisma.lead.count({ where: { ...where, status: 4 } }),
-      prisma.lead.count({ where: { ...where, status: 5 } }),
+      prisma.lead.groupBy({
+        by: ['status'],
+        where,
+        _count: { id: true }
+      }),
       prisma.lead.groupBy({
         by: ['source'],
         where,
@@ -647,6 +642,19 @@ const getLeadStats = async (req, res) => {
         _count: { id: true }
       })
     ]);
+
+    // Map status groups to easy-access object
+    const statusCounts = statusGroups.reduce((acc, curr) => {
+      acc[curr.status] = curr._count.id;
+      return acc;
+    }, {});
+
+    const totalLeads = statusGroups.reduce((sum, curr) => sum + curr._count.id, 0);
+    const newLeads = statusCounts[1] || 0;
+    const contactedLeads = statusCounts[2] || 0;
+    const qualifiedLeads = statusCounts[3] || 0;
+    const convertedLeads = statusCounts[4] || 0;
+    const lostLeads = statusCounts[5] || 0;
 
     res.status(200).json({
       success: true,

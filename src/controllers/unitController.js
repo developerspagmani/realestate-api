@@ -58,68 +58,72 @@ const createUnit = async (req, res) => {
             uniqueSlug = `${baseSlug}-${counter++}`;
         }
 
-        const unit = await prisma.unit.create({
-            data: {
-                tenantId,
-                propertyId,
-                unitCategory,
-                unitCode,
-                slug: uniqueSlug,
-                floorNo: floorNo ? parseInt(floorNo) : null,
-                capacity: capacity ? parseInt(capacity) : null,
-                sizeSqft: sizeSqft ? parseInt(sizeSqft) : null,
-                mainImageId: mainImageId || null,
-                gallery: Array.isArray(gallery) ? gallery : [],
-                status: 1 // 1: available
-            }
-        });
-
-        // Real Estate Details
-        const { realEstateDetails } = req.body;
-        if (realEstateDetails) {
-            const parseVal = (v) => (v !== undefined && v !== null && v !== '') ? parseInt(v) : null;
-            await prisma.realEstateUnitDetails.create({
+        const unit = await prisma.$transaction(async (tx) => {
+            const newUnit = await tx.unit.create({
                 data: {
-                    unitId: unit.id,
-                    bedrooms: parseVal(realEstateDetails.bedrooms),
-                    bathrooms: parseVal(realEstateDetails.bathrooms),
-                    furnishing: parseVal(realEstateDetails.furnishing),
-                    parkingSlots: parseVal(realEstateDetails.parkingSlots),
-                    facing: parseVal(realEstateDetails.facing)
+                    tenantId,
+                    propertyId,
+                    unitCategory,
+                    unitCode,
+                    slug: uniqueSlug,
+                    floorNo: floorNo ? parseInt(floorNo) : null,
+                    capacity: capacity ? parseInt(capacity) : null,
+                    sizeSqft: sizeSqft ? parseInt(sizeSqft) : null,
+                    mainImageId: mainImageId || null,
+                    gallery: Array.isArray(gallery) ? gallery : [],
+                    status: 1 // 1: available
                 }
             });
-        }
 
-        // Create unit pricing
-        const { hourlyRate, dailyRate, monthlyRate, price, currency } = req.body;
-        const prices = [
-            { pricingModel: 1, price: parseFloat(price) || 0 }, // Fixed / Sale
-            { pricingModel: 2, price: parseFloat(hourlyRate) || 0 },
-            { pricingModel: 3, price: parseFloat(dailyRate) || 0 },
-            { pricingModel: 4, price: parseFloat(monthlyRate) || 0 }
-        ].filter(p => p.price > 0);
+            // Real Estate Details
+            const { realEstateDetails } = req.body;
+            if (realEstateDetails) {
+                const parseVal = (v) => (v !== undefined && v !== null && v !== '') ? parseInt(v) : null;
+                await tx.realEstateUnitDetails.create({
+                    data: {
+                        unitId: newUnit.id,
+                        bedrooms: parseVal(realEstateDetails.bedrooms),
+                        bathrooms: parseVal(realEstateDetails.bathrooms),
+                        furnishing: parseVal(realEstateDetails.furnishing),
+                        parkingSlots: parseVal(realEstateDetails.parkingSlots),
+                        facing: parseVal(realEstateDetails.facing)
+                    }
+                });
+            }
 
-        for (const p of prices) {
-            await prisma.unitPricing.create({
-                data: {
-                    unitId: unit.id,
+            // Create unit pricing
+            const { hourlyRate, dailyRate, monthlyRate, price, currency } = req.body;
+            const pricingData = [
+                { pricingModel: 1, price: parseFloat(price) || 0 }, // Fixed / Sale
+                { pricingModel: 2, price: parseFloat(hourlyRate) || 0 },
+                { pricingModel: 3, price: parseFloat(dailyRate) || 0 },
+                { pricingModel: 4, price: parseFloat(monthlyRate) || 0 }
+            ]
+                .filter(p => p.price > 0)
+                .map(p => ({
+                    unitId: newUnit.id,
                     pricingModel: p.pricingModel,
                     price: p.price,
                     currency: currency || 'USD'
-                }
-            });
-        }
+                }));
 
-        // Add default amenities for unit category
-        const defaultAmenities = await getDefaultAmenities(unitCategory);
-        for (const amenity of defaultAmenities) {
-            await prisma.unitAmenity.create({
-                data: {
-                    unitId: unit.id,
-                    amenityId: amenity.id
-                }
-            });
-        }
+            if (pricingData.length > 0) {
+                await tx.unitPricing.createMany({ data: pricingData });
+            }
+
+            // Add default amenities for unit category
+            const defaultAmenities = await getDefaultAmenities(unitCategory);
+            if (defaultAmenities.length > 0) {
+                await tx.unitAmenity.createMany({
+                    data: defaultAmenities.map(amenity => ({
+                        unitId: newUnit.id,
+                        amenityId: amenity.id
+                    }))
+                });
+            }
+
+            return newUnit;
+        });
 
         res.status(201).json({
             success: true,
@@ -195,12 +199,19 @@ const getUnits = async (req, res) => {
                     }
                 };
             } else if (req.user.role === 3) {
-                // If owner, restrict to properties they have access to
-                where.property = {
-                    userPropertyAccess: {
-                        some: { userId: req.user.id }
-                    }
-                };
+                // If owner, check if they have specific property access defined
+                const accessRecord = await prisma.userPropertyAccess.findFirst({
+                    where: { userId: req.user.id, tenantId: tenantId || undefined },
+                    select: { id: true }
+                });
+
+                if (accessRecord) {
+                    where.property = {
+                        userPropertyAccess: {
+                            some: { userId: req.user.id }
+                        }
+                    };
+                }
             }
         }
 

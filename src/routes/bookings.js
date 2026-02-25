@@ -25,10 +25,8 @@ router.post('/', validate(schemas.createBooking), createBooking);
 router.get('/my', getUserBookings);
 router.get('/check-availability', checkAvailability);
 
-// FUNC-05 fix: Stats route BEFORE /:id so it's not shadowed
 router.get('/stats', authorize(2, 3), getBookingStats);
 
-// Admin/Owner routes — SEC-06 fix: restored authorization
 router.get('/', authorize(2, 3), getAllBookings);
 
 router.get('/:id', getBookingById);

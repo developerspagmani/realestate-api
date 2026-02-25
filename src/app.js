@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const cron = require('node-cron');
 require('dotenv').config();
 // Restart trigger - forced update
 
@@ -45,12 +44,12 @@ const cmsRoutes = require('./routes/cmsRoutes');
 const upgradeRequestsRoutes = require('./routes/upgradeRequests');
 const integrationRoutes = require('./routes/integrations');
 const socialRoutes = require('./routes/social');
+const cronRoutes = require('./routes/cronRoutes');
 
 
 
 
 const errorHandler = require('./middleware/errorHandler');
-const ScheduledPostsService = require('./services/social/scheduledPostsService');
 
 const app = express();
 
@@ -148,6 +147,9 @@ app.use('/api/upgrade-requests', upgradeRequestsRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/social', socialRoutes);
 
+// Vercel Serverless Cron Jobs
+app.use('/api/crons', cronRoutes);
+
 
 
 
@@ -180,25 +182,6 @@ process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await disconnectDB();
   process.exit(0);
-});
-
-// Initialize background workers
-const scheduledPostsService = new ScheduledPostsService();
-
-// Run background tasks every minute
-cron.schedule('* * * * *', async () => {
-  try {
-    // 1. Process Social Media Posts
-    await scheduledPostsService.publishScheduledPosts();
-
-    // 2. Process Marketing Workflows
-    const WorkflowService = require('./services/marketing/WorkflowService');
-    await WorkflowService.processWorkflows();
-
-    console.log('[Cron] Background tasks processed successfully.');
-  } catch (error) {
-    console.error('[Cron] Error in background tasks:', error);
-  }
 });
 
 // Start server with database connection

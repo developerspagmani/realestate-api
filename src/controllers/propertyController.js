@@ -179,11 +179,13 @@ const getProperties = async (req, res) => {
 
     if (effectiveOwnerId) {
       // Check if user has any specific property access defined
-      const hasAccessRecords = await prisma.userPropertyAccess.count({
-        where: { userId: effectiveOwnerId, tenantId: tenantId || undefined }
+      // PERF: findFirst is faster than count for existence checks
+      const accessRecord = await prisma.userPropertyAccess.findFirst({
+        where: { userId: effectiveOwnerId, tenantId: tenantId || undefined },
+        select: { id: true }
       });
 
-      if (hasAccessRecords > 0) {
+      if (accessRecord) {
         where.userPropertyAccess = {
           some: { userId: effectiveOwnerId }
         };

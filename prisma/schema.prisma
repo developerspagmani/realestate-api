@@ -213,6 +213,8 @@ model Property {
 
   @@index([tenantId])
   @@index([categoryId])
+  @@index([status])
+  @@index([propertyType])
   @@map("properties")
 }
 
@@ -276,6 +278,8 @@ model Unit {
 
   @@index([tenantId])
   @@index([propertyId])
+  @@index([status])
+  @@index([unitCategory])
   @@map("units")
 }
 
@@ -363,6 +367,7 @@ model Booking {
   @@index([propertyId])
   @@index([unitId])
   @@index([userId])
+  @@index([status])
   @@index([createdAt])
   @@map("bookings")
 }
@@ -418,6 +423,8 @@ model Lead {
   @@index([tenantId])
   @@index([propertyId])
   @@index([userId])
+  @@index([status])
+  @@index([source])
   @@index([createdAt])
   @@map("leads")
 }
@@ -481,6 +488,9 @@ model UserPropertyAccess {
   tenant      Tenant?   @relation(fields: [tenantId], references: [id])
   user        User?     @relation(fields: [userId], references: [id])
 
+  @@index([userId])
+  @@index([tenantId])
+  @@index([propertyId])
   @@map("user_property_access")
 }
 

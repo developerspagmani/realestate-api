@@ -85,7 +85,7 @@ const createBooking = async (req, res) => {
     // Start transaction for ACID compliance
     const result = await prisma.$transaction(async (tx) => {
       // Check unit availability
-      const conflictingBookings = await tx.booking.findMany({
+      const conflict = await tx.booking.findFirst({
         where: {
           unitId,
           status: { in: [2, 4] }, // 2: confirmed, 4: completed
@@ -95,10 +95,11 @@ const createBooking = async (req, res) => {
               endAt: { gte: new Date(startAt) }
             }
           ]
-        }
+        },
+        select: { id: true }
       });
 
-      if (conflictingBookings.length > 0) {
+      if (conflict) {
         throw new Error('Unit is not available for the selected dates');
       }
 
@@ -915,11 +916,13 @@ const getAllBookings = async (req, res) => {
 
     if (effectiveOwnerId) {
       // Check if this user has specific property access records
-      const hasAccessRecords = await prisma.userPropertyAccess.count({
-        where: { userId: effectiveOwnerId, tenantId: effectiveTenantId }
+      // OPTIMIZATION: Use findFirst instead of count for existence checks (faster)
+      const hasAccessRecord = await prisma.userPropertyAccess.findFirst({
+        where: { userId: effectiveOwnerId, tenantId: effectiveTenantId },
+        select: { id: true }
       });
 
-      if (hasAccessRecords > 0) {
+      if (hasAccessRecord) {
         // Find properties this user has access to
         const accessRecords = await prisma.userPropertyAccess.findMany({
           where: { userId: effectiveOwnerId },
@@ -927,9 +930,17 @@ const getAllBookings = async (req, res) => {
         });
         const propertyIds = accessRecords.map(r => r.propertyId);
 
+        // OPTIMIZATION: Instead of joining Unit table in the OR clause (which is very slow),
+        // we pre-fetch the unitIds that belong to these properties.
+        const units = await prisma.unit.findMany({
+          where: { propertyId: { in: propertyIds } },
+          select: { id: true }
+        });
+        const unitIds = units.map(u => u.id);
+
         where.OR = [
           { propertyId: { in: propertyIds } },
-          { unit: { propertyId: { in: propertyIds } } }
+          { unitId: { in: unitIds } }
         ];
       }
       // If no access records, they are treated as global owners for that tenant
@@ -969,16 +980,7 @@ const getAllBookings = async (req, res) => {
             select: {
               id: true,
               unitCode: true,
-              unitCategory: true,
-              property: {
-                select: {
-                  id: true,
-                  title: true,
-                  city: true,
-                  addressLine1: true,
-                  addressLine2: true,
-                }
-              }
+              unitCategory: true
             }
           },
           property: {
