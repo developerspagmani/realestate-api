@@ -142,6 +142,37 @@ module.exports = {
         }
     },
 
+    updateTask: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { title, description, priority, dueDate, assignedTo, leadId, status } = req.body;
+            const tenantId = req.user.tenantId;
+
+            const updateData = {};
+            if (title !== undefined) updateData.title = title;
+            if (description !== undefined) updateData.description = description;
+            if (priority !== undefined) updateData.priority = parseInt(priority);
+            if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+            if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+            if (leadId !== undefined) updateData.leadId = (leadId && leadId.trim() !== '') ? leadId : null;
+            if (status !== undefined) updateData.status = parseInt(status);
+
+            const task = await prisma.task.update({
+                where: { id, tenantId },
+                data: updateData,
+                include: {
+                    agent: { include: { user: { select: { name: true } } } },
+                    lead: { select: { name: true } }
+                }
+            });
+
+            res.status(200).json({ success: true, data: task });
+        } catch (error) {
+            console.error('Update task error:', error);
+            res.status(500).json({ success: false, message: 'Server error updating task' });
+        }
+    },
+
     deleteTask: async (req, res) => {
         try {
             const { id } = req.params;

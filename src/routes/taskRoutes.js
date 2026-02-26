@@ -13,6 +13,7 @@ router.patch('/:id/status', authorize(4, 2, 3), taskController.updateTaskStatus)
 // Admin/Owner routes
 router.post('/', authorize(2, 3), taskController.createTask);
 router.get('/', authorize(2, 3), taskController.getTenantTasks);
+router.put('/:id', authorize(2, 3), taskController.updateTask);
 router.delete('/:id', authorize(2, 3), taskController.deleteTask);
 
 module.exports = router;

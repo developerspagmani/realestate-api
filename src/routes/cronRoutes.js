@@ -1,23 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const cron = require('node-cron');
 const ScheduledPostsService = require('../services/social/scheduledPostsService');
 
 // Instantiate services
 const scheduledPostsService = new ScheduledPostsService();
 
-// Define cron route
-router.get('/process', async (req, res) => {
+/**
+ * Background Task Executor
+ * This runs the same logic that the Vercel cron endpoint used to run.
+ */
+const executeCronTasks = async () => {
     try {
-        // Vercel Cron sends a Bearer token in the Authorization header.
-        // It's recommended to verify this header against a CRON_SECRET environment variable.
-        const authHeader = req.headers.authorization || '';
-        const cronSecret = process.env.CRON_SECRET;
-
-        if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-            return res.status(401).json({ success: false, message: 'Unauthorized cron request' });
-        }
-
-        console.log('[Vercel Cron] Starting background tasks execution...');
+        console.log('[Node-Cron] Starting background tasks execution...');
 
         // 1. Process Social Media Posts
         await scheduledPostsService.publishScheduledPosts();
@@ -40,16 +35,43 @@ router.get('/process', async (req, res) => {
                 await leadNurtureService.scanForRevivals(tenant.id);
             }
         } catch (riskError) {
-            console.error('[Vercel Cron] Risk scanning failed:', riskError);
+            console.error('[Node-Cron] Risk scanning failed:', riskError);
         }
 
-        console.log('[Vercel Cron] Background tasks processed successfully.');
-
-        // Always return 200 OK to acknowledge the cron execution
-        res.status(200).json({ success: true, message: 'Cron tasks executed successfully' });
+        console.log('[Node-Cron] Background tasks processed successfully.');
     } catch (error) {
-        console.error('[Vercel Cron] Error executing background tasks:', error);
-        res.status(500).json({ success: false, message: 'Error executing cron tasks', error: error.message });
+        console.error('[Node-Cron] Error executing background tasks:', error);
+    }
+};
+
+// Initialize Node-Cron (runs every minute as per previous Vercel config)
+cron.schedule('* * * * *', executeCronTasks);
+console.log('✅ Node-Cron initialized: Running every minute');
+
+// Define cron route - Now INACTIVE
+router.get('/process', async (req, res) => {
+    try {
+        /*
+        // ORIGINAL LOGIC (KEEPING FOR LATER)
+        const authHeader = req.headers.authorization || '';
+        const cronSecret = process.env.CRON_SECRET;
+
+        if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+            return res.status(401).json({ success: false, message: 'Unauthorized cron request' });
+        }
+
+        console.log('[Vercel Cron] Starting background tasks execution...');
+        await executeCronTasks();
+        */
+
+        res.status(200).json({
+            success: true,
+            message: 'Cron API is currently inactive (switched to internal node-cron)',
+            status: 'inactive'
+        });
+    } catch (error) {
+        console.error('[Cron API] Error:', error);
+        res.status(500).json({ success: false, message: 'Error in cron api', error: error.message });
     }
 });
 
