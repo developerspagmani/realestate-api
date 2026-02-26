@@ -40,6 +40,7 @@ model Tenant {
   integrations          Integration[]
   leadInteractions      LeadInteraction[]
   leads                 Lead[]
+  lostLeads             LeadLossData[]
   licenseKey            LicenseKey?
   listings              Listing[]
   marketingWorkflows    MarketingWorkflow[]
@@ -64,6 +65,7 @@ model Tenant {
   portalListings        PortalListing[]
   widgets               Widget[]
   workflowLogs          WorkflowLog[]
+  tasks                 Task[]
 
   @@map("tenants")
 }
@@ -154,6 +156,7 @@ model User {
   userPropertyAccess   UserPropertyAccess[]
   tenant               Tenant?              @relation(fields: [tenantId], references: [id])
   whatsappCampaigns    WhatsAppCampaign[]
+  createdTasks         Task[]
 
   @@index([tenantId])
   @@index([phone])
@@ -409,6 +412,10 @@ model Lead {
   userId         String?              @map("user_id") @db.Uuid
   assignedAt     DateTime?            @map("assigned_at")
   leadScore      Int                  @default(0) @map("lead_score")
+  riskScore      Int                  @default(0) @map("risk_score")
+  riskSignals    Json?                @default("[]") @map("risk_signals")
+  authenticityScore Int               @default(0) @map("authenticity_score")
+  lastActivityAt DateTime?            @default(now()) @map("last_activity_at")
   preferences    Json?                @default("{}")
   agentLeads     AgentLead[]
   bookings       Booking[]
@@ -419,6 +426,8 @@ model Lead {
   user           User?                @relation(fields: [userId], references: [id])
   enrollments    WorkflowEnrollment[]
   audienceGroups AudienceGroup[]      @relation("LeadAudienceGroups")
+  lossData       LeadLossData?
+  tasks          Task[]
 
   @@index([tenantId])
   @@index([propertyId])
@@ -427,6 +436,27 @@ model Lead {
   @@index([source])
   @@index([createdAt])
   @@map("leads")
+}
+
+model LeadLossData {
+  id              String   @id @default(uuid()) @db.Uuid
+  leadId          String   @unique @map("lead_id") @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  primaryReason   String   @map("primary_reason")
+  secondaryReason String?  @map("secondary_reason")
+  stageAtLoss     String   @map("stage_at_loss") // "Enquiry", "Site Visit", "Negotiation", "Booking"
+  lostImpactScore Decimal  @default(0) @map("lost_impact_score") @db.Decimal(15, 2)
+  competitorName  String?  @map("competitor_name")
+  notes           String?
+  revivalStatus   Int      @default(1) @map("revival_status") // 1: None, 2: Queued, 3: Active, 4: Revived
+  revivalDate     DateTime? @map("revival_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  lead            Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("lead_loss_data")
 }
 
 model WorkflowEnrollment {
@@ -694,6 +724,7 @@ model Agent {
   user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookings           Booking[]
   commissions        Commission[]
+  tasks              Task[]
 
   @@index([tenantId])
   @@map("agents")
@@ -1104,3 +1135,29 @@ model PortalListing {
   @@index([propertyId])
   @@map("portal_listings")
 }
+
+model Task {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  title       String
+  description String?
+  priority    Int       @default(2) // 1: Low, 2: Medium, 3: High
+  status      Int       @default(1) // 1: Pending, 2: In Progress, 3: Completed, 4: Cancelled
+  dueDate     DateTime? @map("due_date")
+  assignedTo  String?   @map("assigned_to") @db.Uuid // Agent ID
+  createdBy   String?   @map("created_by") @db.Uuid // Admin/Owner User ID
+  leadId      String?   @map("lead_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent       Agent?    @relation(fields: [assignedTo], references: [id])
+  lead        Lead?     @relation(fields: [leadId], references: [id])
+  creator     User?     @relation(fields: [createdBy], references: [id])
+
+  @@index([tenantId])
+  @@index([assignedTo])
+  @@index([leadId])
+  @@map("tasks")
+}
+

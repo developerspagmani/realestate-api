@@ -157,6 +157,70 @@ const automationController = {
     },
 
     /**
+     * Get Matched Leads
+     */
+    getMatchedLeads: async (req, res) => {
+        try {
+            const isSuperAdmin = req.user?.role === 4;
+            const tenantId = req.tenant?.id || req.user?.tenantId;
+
+            const where = {};
+            if (!isSuperAdmin) {
+                if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant ID required' });
+                where.tenantId = tenantId;
+            }
+
+            // A matched lead is someone who has `isWaitingForMatch: false` AND they had a `PROPERTY_MATCH` interaction.
+            const interactions = await prisma.leadInteraction.findMany({
+                where: {
+                    tenantId: where.tenantId,
+                    type: 'PROPERTY_MATCH'
+                },
+                select: { leadId: true },
+                distinct: ['leadId']
+            });
+            const leadIds = interactions.map(i => i.leadId);
+
+            const leads = await prisma.lead.findMany({
+                where: {
+                    ...where,
+                    id: { in: leadIds }
+                },
+                include: {
+                    tenant: { select: { name: true } },
+                    interactions: {
+                        where: { type: 'PROPERTY_MATCH' },
+                        orderBy: { occurredAt: 'desc' },
+                        take: 1
+                    }
+                },
+                orderBy: { updatedAt: 'desc' }
+            });
+
+            const transformedLeads = leads.map(l => {
+                const prefs = l.preferences || {};
+                const lastMatch = l.interactions[0];
+                return {
+                    id: l.id,
+                    name: l.name || 'Anonymous',
+                    tenant: l.tenant?.name || 'Unknown',
+                    location: prefs.location || 'Anywhere',
+                    budget: prefs.maxPrice ? `₹${prefs.maxPrice.toLocaleString()}` : (l.budget ? `₹${l.budget.toLocaleString()}` : 'Not Set'),
+                    type: prefs.propertyType || 'Generic',
+                    matchedDate: lastMatch ? lastMatch.occurredAt.toISOString().split('T')[0] : l.updatedAt.toISOString().split('T')[0],
+                    matchCount: lastMatch?.metadata?.propertyIds?.length || 0,
+                    status: 'Matched'
+                };
+            });
+
+            res.json({ success: true, data: transformedLeads });
+        } catch (error) {
+            console.error('[AutomationController] Matched leads error:', error);
+            res.status(500).json({ success: false, message: 'Error fetching matched leads', details: error.message });
+        }
+    },
+
+    /**
      * Create Workflow
      */
     createWorkflow: async (req, res) => {

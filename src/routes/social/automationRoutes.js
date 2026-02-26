@@ -5,6 +5,7 @@ const automationController = require('../../controllers/social/automationControl
 router.get('/stats', automationController.getStats);
 router.get('/workflows', automationController.getWorkflows);
 router.get('/waiting-leads', automationController.getWaitingLeads);
+router.get('/matched-leads', automationController.getMatchedLeads);
 
 // CRUD
 router.post('/workflows', automationController.createWorkflow);

@@ -285,6 +285,68 @@ const sendLeadEmail = async (email, name, leadDetails) => {
 };
 
 /**
+ * Send Task Assignment Email to Agent
+ */
+const sendTaskAssignmentEmail = async (email, name, taskDetails) => {
+    try {
+        const priorityLabel = taskDetails.priority === 3 ? 'High' : (taskDetails.priority === 2 ? 'Medium' : 'Low');
+        const priorityColor = taskDetails.priority === 3 ? '#ef4444' : (taskDetails.priority === 2 ? '#f59e0b' : '#3b82f6');
+
+        const mailOptions = {
+            from: `"${APP_NAME}" <${FROM_EMAIL}>`,
+            to: email,
+            subject: `New Task Assigned: ${taskDetails.title}`,
+            html: `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h2 style="color: #4f46e5; margin: 0;">New Task Assignment</h2>
+                <p style="color: #6b7280; margin-top: 5px;">A new priority task has been assigned to you.</p>
+            </div>
+            
+            <div style="background-color: #f9fafb; padding: 25px; border-radius: 10px; border-left: 4px solid #4f46e5; margin-bottom: 25px;">
+                <h3 style="margin-top: 0; color: #111827; font-size: 18px;">${taskDetails.title}</h3>
+                <p style="color: #4b5563; line-height: 1.5;">${taskDetails.description || 'No additional instructions.'}</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px;">
+                    <div>
+                        <span style="font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: bold; display: block;">Priority</span>
+                        <span style="color: ${priorityColor}; font-weight: 600;">${priorityLabel}</span>
+                    </div>
+                    <div>
+                        <span style="font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: bold; display: block;">Due Date</span>
+                        <span style="color: #111827; font-weight: 600;">${taskDetails.dueDate ? new Date(taskDetails.dueDate).toLocaleDateString() : 'As soon as possible'}</span>
+                    </div>
+                </div>
+            </div>
+
+            ${taskDetails.leadName ? `
+            <div style="margin-top: 20px; padding: 15px; background-color: #eff6ff; border-radius: 8px;">
+                <h4 style="margin: 0; color: #1e40af; font-size: 14px;">LEAD CONTEXT</h4>
+                <p style="margin: 5px 0 0 0; color: #1e3a8a; font-weight: bold;">${taskDetails.leadName}</p>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin-top: 35px;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/realestate-agent/tasks" style="background-color: #4f46e5; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">View Task in Portal</a>
+            </div>
+
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center;">
+                <p style="font-size: 12px; color: #9ca3af; margin-bottom: 0;">
+                    &copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+                </p>
+            </div>
+        </div>
+        `
+        };
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Error sending task assignment email:', error);
+        return false;
+    }
+};
+
+/**
  * Send custom template email
  */
 const sendTemplateEmail = async (email, subject, html) => {
@@ -311,5 +373,7 @@ module.exports = {
     sendPropertyRecommendationEmail,
     sendBookingEmail,
     sendLeadEmail,
+    sendTaskAssignmentEmail,
     sendTemplateEmail
 };
+

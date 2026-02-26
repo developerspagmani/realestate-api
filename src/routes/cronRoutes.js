@@ -26,6 +26,23 @@ router.get('/process', async (req, res) => {
         const WorkflowService = require('../services/marketing/WorkflowService');
         await WorkflowService.processWorkflows();
 
+        // 3. Proactive Deal Prevention Scanning
+        try {
+            const dealPreventionService = require('../services/dealPreventionService');
+            const leadNurtureService = require('../services/social/leadNurtureService');
+
+            // Get all tenants to scan
+            const { prisma } = require('../config/database');
+            const tenants = await prisma.tenant.findMany({ select: { id: true } });
+
+            for (const tenant of tenants) {
+                await dealPreventionService.scanTenantLeads(tenant.id);
+                await leadNurtureService.scanForRevivals(tenant.id);
+            }
+        } catch (riskError) {
+            console.error('[Vercel Cron] Risk scanning failed:', riskError);
+        }
+
         console.log('[Vercel Cron] Background tasks processed successfully.');
 
         // Always return 200 OK to acknowledge the cron execution

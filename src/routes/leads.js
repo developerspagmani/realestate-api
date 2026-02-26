@@ -9,6 +9,7 @@ const {
   updateLeadStatus,
   deleteLead,
   getLeadStats,
+  markLeadAsLost,
 } = require('../controllers/leadsController');
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.get('/stats', authorize(2, 3), getLeadStats);
 router.get('/:id', authorize(2, 3), getLeadById);
 router.put('/:id', authorize(2, 3), validate(schemas.updateLead), updateLead);
 router.put('/:id/status', authorize(2, 3), validate(schemas.updateLeadStatus), updateLeadStatus);
+router.post('/:id/lost', authorize(2, 3, 4), markLeadAsLost);
 router.delete('/:id', authorize(2, 3), deleteLead);
 
 module.exports = router;

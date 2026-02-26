@@ -1,4 +1,5 @@
 const { prisma } = require('../config/database');
+const leadNurtureService = require('../services/social/leadNurtureService');
 
 // Create property
 const createProperty = async (req, res) => {
@@ -331,6 +332,12 @@ const updateProperty = async (req, res) => {
       gallery: updateData.gallery
     });
 
+    // Get old price to check for drop
+    const oldProperty = await prisma.property.findUnique({
+      where: { id, tenantId },
+      select: { price: true }
+    });
+
     const property = await prisma.property.update({
       where: { id, tenantId },
       data: {
@@ -341,6 +348,11 @@ const updateProperty = async (req, res) => {
         } : undefined
       }
     });
+
+    // Trigger revival if price dropped
+    if (updateData.price && oldProperty && Number(updateData.price) < Number(oldProperty.price)) {
+      setTimeout(() => leadNurtureService.reviveLeadsOnPriceDrop(id, Number(updateData.price)), 100);
+    }
 
     console.log('Update Property Success:', property.id);
 

@@ -1,6 +1,8 @@
 const { prisma } = require('../config/database');
 const { assignLeadRoundRobin } = require('./agentController');
 const { sendLeadEmail } = require('../utils/emailService');
+const dealPreventionService = require('../services/dealPreventionService');
+const leadNurtureService = require('../services/social/leadNurtureService');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
@@ -467,9 +469,11 @@ const updateLeadStatus = async (req, res) => {
       data: {
         status: parseInt(status),
         notes: notes || null,
+        lastActivityAt: new Date(),
         updatedAt: new Date()
       },
       include: {
+        interactions: { take: 5, orderBy: { occurredAt: 'desc' } },
         user: {
           select: {
             id: true,
@@ -486,6 +490,9 @@ const updateLeadStatus = async (req, res) => {
         }
       }
     });
+
+    // Proactive Risk Assessment
+    setTimeout(() => dealPreventionService.calculateAndSaveRisk(lead), 100);
 
     // Trigger STATUS_CHANGED workflows in the background
     try {
@@ -701,7 +708,8 @@ const updateLead = async (req, res) => {
       agentId, // Allow updating agent
       preferences,
       isConvertedToUser,
-      userCreationData
+      userCreationData,
+      lossData
     } = req.body;
 
     const isAdmin = req.user.role === 2;
@@ -725,6 +733,7 @@ const updateLead = async (req, res) => {
       preferredDate: preferredDate ? new Date(preferredDate) : undefined,
       notes,
       preferences,
+      lastActivityAt: new Date(),
       updatedAt: new Date()
     };
 
@@ -823,6 +832,31 @@ const updateLead = async (req, res) => {
       data.status = 4; // Force "Converted" status
     }
 
+    // Handle Lead Loss Data Updates
+    if (lossData && (data.status === 5 || existingLead.status === 5)) {
+      await prisma.leadLossData.upsert({
+        where: { leadId: id },
+        update: {
+          primaryReason: lossData.primaryReason,
+          secondaryReason: lossData.secondaryReason,
+          stageAtLoss: lossData.stageAtLoss,
+          competitorName: lossData.competitorName,
+          notes: lossData.notes,
+          lostImpactScore: lossData.lostImpactScore
+        },
+        create: {
+          leadId: id,
+          tenantId,
+          primaryReason: lossData.primaryReason,
+          secondaryReason: lossData.secondaryReason,
+          stageAtLoss: lossData.stageAtLoss,
+          competitorName: lossData.competitorName,
+          notes: lossData.notes,
+          lostImpactScore: lossData.lostImpactScore
+        }
+      });
+    }
+
     const lead = await prisma.lead.update({
       where: { id, tenantId },
       data,
@@ -844,9 +878,13 @@ const updateLead = async (req, res) => {
               }
             }
           }
-        }
+        },
+        interactions: { take: 5, orderBy: { occurredAt: 'desc' } }
       }
     });
+
+    // Proactive Risk Assessment
+    setTimeout(() => dealPreventionService.calculateAndSaveRisk(lead), 100);
 
     // Re-evaluate matching preferences
     try {
@@ -876,12 +914,73 @@ const updateLead = async (req, res) => {
   }
 };
 
+// Mark Lead as Lost (Deal Closer)
+const markLeadAsLost = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { primaryReason, secondaryReason, stageAtLoss, competitorName, notes } = req.body;
+    const tenantId = req.user.tenantId || req.tenant.id;
+
+    const lead = await prisma.lead.findUnique({
+      where: { id },
+      select: { id: true, budget: true, leadScore: true }
+    });
+
+    if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+    // Calculate Lost Impact Score
+    let stageWeight = 0.2; // Encounter / Enquiry default
+    if (stageAtLoss === 'Site Visit') stageWeight = 0.5;
+    else if (stageAtLoss === 'Negotiation') stageWeight = 0.8;
+    else if (stageAtLoss === 'Booking Stage') stageWeight = 1.0;
+
+    const budget = Number(lead.budget) || 0;
+    let qualityMultiplier = 0.5; // Cold
+    if (lead.leadScore >= 70) qualityMultiplier = 1.0; // Hot
+    else if (lead.leadScore >= 40) qualityMultiplier = 0.8; // Warm
+
+    const impactScore = budget * stageWeight * qualityMultiplier;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.lead.update({
+        where: { id },
+        data: { status: 5 } // 5 = Lost
+      });
+
+      await tx.leadLossData.upsert({
+        where: { leadId: id },
+        update: { primaryReason, secondaryReason, stageAtLoss, lostImpactScore: impactScore, competitorName, notes },
+        create: {
+          leadId: id,
+          tenantId,
+          primaryReason,
+          secondaryReason,
+          stageAtLoss,
+          lostImpactScore: impactScore,
+          competitorName,
+          notes
+        }
+      });
+    });
+
+    res.status(200).json({ success: true, message: 'Lead marked as lost correctly.', data: { lostImpactScore: impactScore } });
+
+    // Background: Handle future nurture logic
+    const { handleLeadLost } = require('../services/social/leadNurtureService');
+    handleLeadLost(id, { primaryReason, secondaryReason, stageAtLoss, competitorName }).catch(err => console.error('Error in handleLeadLost background:', err));
+  } catch (error) {
+    console.error('Error marking lead as lost:', error);
+    res.status(500).json({ success: false, message: 'Server error marking lead as lost' });
+  }
+};
+
 module.exports = {
   getAllLeads,
   getLeadById,
   createLead,
   updateLead,
   updateLeadStatus,
+  markLeadAsLost,
   deleteLead,
   getLeadStats,
 };

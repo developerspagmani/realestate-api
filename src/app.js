@@ -45,6 +45,8 @@ const upgradeRequestsRoutes = require('./routes/upgradeRequests');
 const integrationRoutes = require('./routes/integrations');
 const socialRoutes = require('./routes/social');
 const cronRoutes = require('./routes/cronRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+
 
 
 
@@ -149,6 +151,8 @@ app.use('/api/social', socialRoutes);
 
 // Vercel Serverless Cron Jobs
 app.use('/api/crons', cronRoutes);
+app.use('/api/tasks', taskRoutes);
+
 
 
 

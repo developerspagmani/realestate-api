@@ -70,20 +70,42 @@ const moduleController = {
         try {
             const { tenantId } = req.user;
 
-            const activeModules = await prisma.tenantModule.findMany({
+            // 1. Get manually assigned modules
+            const activeManualModules = await prisma.tenantModule.findMany({
                 where: { tenantId, isActive: true },
                 include: {
                     module: {
-                        select: { slug: true, name: true }
+                        select: { slug: true }
                     }
                 }
             });
 
+            // 2. Get plan-based modules
+            const tenant = await prisma.tenant.findUnique({
+                where: { id: tenantId },
+                include: {
+                    plan: {
+                        include: {
+                            modules: {
+                                select: { slug: true }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const manualSlugs = activeManualModules.map(am => am.module.slug);
+            const planSlugs = tenant?.plan?.modules?.map(m => m.slug) || [];
+
+            // Combine and de-duplicate
+            const allSlugs = [...new Set([...manualSlugs, ...planSlugs])];
+
             res.json({
                 success: true,
-                data: activeModules.map(am => am.module.slug)
+                data: allSlugs
             });
         } catch (error) {
+            console.error('Error fetching modules:', error);
             res.status(500).json({ success: false, message: 'Error fetching active modules.' });
         }
     }

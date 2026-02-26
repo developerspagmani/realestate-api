@@ -2,6 +2,7 @@ const { prisma } = require('../../config/database');
 const aiService = require('./aiService');
 const propertyService = require('./propertyService');
 const whatsappService = require('./whatsappService');
+const emailService = require('../../utils/emailService');
 
 /**
  * Unified Automation Hub Service
@@ -211,8 +212,8 @@ class LeadNurtureService {
 
             // 2. Email Notification (Nurture)
             if (hasEmail) {
-                // Use email service...
                 console.log(`[LeadNurture] Sending property match email to ${lead.email}`);
+                await emailService.sendPropertyRecommendationEmail(lead.email, lead.name, properties);
             }
 
             // 3. Log Interaction
@@ -230,6 +231,140 @@ class LeadNurtureService {
 
         } catch (error) {
             console.error('[LeadNurture] Notification error:', error);
+        }
+    }
+
+    /**
+     * Handle logic after a lead is marked as Lost
+     */
+    async handleLeadLost(leadId, lossData) {
+        try {
+            const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+            if (!lead) return;
+
+            console.log(`[LeadNurture] Handling post-loss logic for Lead ${leadId}. Reason: ${lossData.primaryReason}`);
+
+            // 1. If reason = Budget -> Enable "Price Drop Alerts" in preferences
+            if (lossData.primaryReason === 'Budget too high') {
+                const currentPrefs = lead.preferences || {};
+                await prisma.lead.update({
+                    where: { id: leadId },
+                    data: {
+                        preferences: {
+                            ...currentPrefs,
+                            nurtureMode: 'FUTURE_BUDGET',
+                            alertOnPriceDrop: true,
+                            lastNurtureAction: 'LOST_FEEDBACK_CAPTURED'
+                        }
+                    }
+                });
+            }
+
+            // 2. If reason = Timeline mismatch -> Auto-remind after 3 months (hypothetically schedule a task)
+            if (lossData.primaryReason === 'Timeline mismatch') {
+                // In a real system, we would add this to a job queue (BullMQ/agenda)
+                // For now, we log it and mark it in preferences
+                const currentPrefs = lead.preferences || {};
+                await prisma.lead.update({
+                    where: { id: leadId },
+                    data: {
+                        preferences: {
+                            ...currentPrefs,
+                            nurtureMode: 'LONG_TERM_FOLLOWUP',
+                            followupAfterDays: 90
+                        }
+                    }
+                });
+            }
+
+            // 3. Log interaction for the audit trail
+            await prisma.leadInteraction.create({
+                data: {
+                    tenantId: lead.tenantId,
+                    leadId: lead.id,
+                    type: 'SYSTEM_EVENT',
+                    metadata: {
+                        event: 'DEAL_LOST_NURTURE_TRIGGERED',
+                        reason: lossData.primaryReason,
+                        timestamp: new Date()
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('[LeadNurture] handleLeadLost error:', error);
+        }
+    }
+    /**
+     * Smart Revival Engine: Scans and flags lost leads for re-engagement
+     */
+    async reviveLeadsOnPriceDrop(propertyId, newPrice) {
+        try {
+            console.log(`[LeadRevival] Price drop detected for property ${propertyId} to ${newPrice}. Scanning for lost leads...`);
+
+            // Find leads lost for this property due to "Budget"
+            const lostLeads = await prisma.lead.findMany({
+                where: {
+                    propertyId,
+                    status: 5,
+                    lossData: {
+                        primaryReason: 'Budget too high'
+                    }
+                },
+                include: { lossData: true }
+            });
+
+            for (const lead of lostLeads) {
+                // If new price is within their budget or within a reasonable 10% overflow
+                const leadBudget = Number(lead.budget) || 0;
+                if (newPrice <= leadBudget * 1.1) {
+                    await prisma.leadLossData.update({
+                        where: { leadId: lead.id },
+                        data: {
+                            revivalStatus: 2, // QUEUED
+                            revivalDate: new Date(),
+                            notes: `${lead.lossData.notes || ''}\n[REVIVAL] Auto-flagged: Price dropped to ${newPrice}`
+                        }
+                    });
+
+                    console.log(`[LeadRevival] Flagged Lead ${lead.id} (${lead.name}) for budget revival.`);
+                }
+            }
+        } catch (error) {
+            console.error('[LeadRevival] Price drop error:', error);
+        }
+    }
+
+    async scanForRevivals(tenantId) {
+        try {
+            const now = new Date();
+            // Find leads with "Timeline mismatch" lost more than 90 days ago
+            const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+            const potentialRevivals = await prisma.leadLossData.findMany({
+                where: {
+                    tenantId,
+                    revivalStatus: 1, // None
+                    primaryReason: 'Timeline mismatch',
+                    createdAt: { lt: threeMonthsAgo }
+                }
+            });
+
+            for (const loss of potentialRevivals) {
+                await prisma.leadLossData.update({
+                    where: { id: loss.id },
+                    data: {
+                        revivalStatus: 2, // QUEUED
+                        revivalDate: new Date(),
+                        notes: `${loss.notes || ''}\n[REVIVAL] Time-based re-engagement trigger (90+ days passed)`
+                    }
+                });
+            }
+
+            return potentialRevivals.length;
+        } catch (error) {
+            console.error('[LeadRevival] Scan error:', error);
+            return 0;
         }
     }
 }

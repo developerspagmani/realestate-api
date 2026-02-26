@@ -52,6 +52,7 @@ class LeadIngestionService {
                 });
             } else {
                 // Create new lead
+                const authenticityScore = this.calculateAuthenticity(name, email, phone, message);
                 lead = await prisma.lead.create({
                     data: {
                         tenantId,
@@ -60,8 +61,9 @@ class LeadIngestionService {
                         phone,
                         message,
                         source: sourceId,
-                        status: 1, // New
+                        status: authenticityScore < 30 ? 4 : 1, // Auto-mark as Junk if score is very low
                         propertyId,
+                        authenticityScore,
                         preferences: {
                             sourcePortal,
                             originalMetadata: metadata,
@@ -100,6 +102,23 @@ class LeadIngestionService {
             console.error('[LeadIngestion] Error ingesting lead:', error);
             return { success: false, error: error.message };
         }
+    }
+
+    calculateAuthenticity(name, email, phone, message) {
+        let score = 50; // Starting baseline
+
+        // Presence checks
+        if (!name || name.toLowerCase().includes('test')) score -= 20;
+        if (!email) score -= 15;
+        if (!phone) score -= 20;
+        if (message && message.length < 5) score -= 10;
+
+        // Pattern checks
+        if (email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) score += 15;
+        if (phone && /^\+?[\d\s-]{10,}$/.test(phone)) score += 15;
+        if (name && name.length > 3 && !/\d/.test(name)) score += 10;
+
+        return Math.max(0, Math.min(100, score));
     }
 }
 
