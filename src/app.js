@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
-// Restart trigger - forced update
+// Restart trigger - forced update - v2
 
 const { specs, swaggerUi } = require('./config/swagger');
 const { connectDB, disconnectDB, getDatabaseInfo } = require('./config/database');

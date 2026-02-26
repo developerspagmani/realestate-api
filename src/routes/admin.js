@@ -80,7 +80,15 @@ router.post('/workspace', auth, authorize(2, 3), validate(schemas.createSpace), 
 router.get('/analytics', auth, authorize(2, 3), getSystemAnalytics);
 
 // Advanced Analytics
-const advancedAnalyticsRoutes = require('./analyticsRoutes');
-router.use('/analytics-pro', advancedAnalyticsRoutes);
+const analyticsController = require('../controllers/analyticsController');
+const dealIntelligenceController = require('../controllers/dealIntelligenceController');
+
+router.get('/analytics-pro/revenue-funnel', auth, authorize(2, 3), analyticsController.getRevenueAndLeads);
+router.get('/analytics-pro/agent-performance', auth, authorize(2, 3), analyticsController.getAgentPerformance);
+router.get('/analytics-pro/campaign-stats', auth, authorize(2, 3), analyticsController.getCampaignPerformance);
+router.get('/analytics-pro/marketing-insights', auth, authorize(2, 3), analyticsController.getMarketingInsights);
+router.get('/analytics-pro/demand-intelligence', auth, authorize(2, 3), analyticsController.getDemandIntelligence);
+router.get('/analytics-pro/deal-intelligence', auth, authorize(2, 3), dealIntelligenceController.getLostDealsIntelligence);
+router.get('/analytics-pro/prevention-insights', auth, authorize(2, 3), dealIntelligenceController.getPreventionInsights);
 
 module.exports = router;
