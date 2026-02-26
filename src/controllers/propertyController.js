@@ -302,35 +302,79 @@ const updateProperty = async (req, res) => {
     // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
     const tenantId = (isAdmin && (req.query.tenantId || req.body.tenantId)) ? (req.query.tenantId || req.body.tenantId) : (req.tenant?.id || req.user?.tenantId);
 
-    const updateData = { ...req.body };
-    const amenities = updateData.amenities;
-    delete updateData.id;
-    delete updateData.tenantId;
-    delete updateData.amenities;
+    const {
+      propertyType,
+      title,
+      slug: bodySlug,
+      description,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      country,
+      postalCode,
+      latitude,
+      longitude,
+      mainImageId,
+      gallery,
+      status,
+      area,
+      floorPlanId,
+      brochureId,
+      amenities,
+      yearBuilt,
+      neighborhood,
+      parkingSpaces,
+      bedrooms,
+      bathrooms,
+      lotSize,
+      listingType,
+      categoryId,
+      videoUrl,
+      price,
+      metadata
+    } = req.body;
 
     if (!tenantId) {
       return res.status(400).json({ success: false, message: 'Tenant ID is required' });
     }
 
-    if (updateData.mainImageId === '') updateData.mainImageId = null;
-    if (updateData.gallery && !Array.isArray(updateData.gallery)) updateData.gallery = [];
-    if (updateData.area) updateData.area = parseInt(updateData.area);
-    if (updateData.floorPlanId === '') updateData.floorPlanId = null;
-    if (updateData.brochureId === '') updateData.brochureId = null;
-    if (updateData.yearBuilt) updateData.yearBuilt = parseInt(updateData.yearBuilt);
-    if (updateData.parkingSpaces) updateData.parkingSpaces = parseInt(updateData.parkingSpaces);
-    if (updateData.bedrooms) updateData.bedrooms = parseInt(updateData.bedrooms);
-    if (updateData.bathrooms) updateData.bathrooms = parseInt(updateData.bathrooms);
-    if (updateData.price) updateData.price = parseFloat(updateData.price);
-    if (updateData.lotSize) updateData.lotSize = parseInt(updateData.lotSize);
-    if (updateData.categoryId === '') updateData.categoryId = null;
+    const updateBody = {
+      propertyType: propertyType ? parseInt(propertyType) : undefined,
+      title,
+      slug: bodySlug,
+      description,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      country,
+      postalCode,
+      latitude: latitude ? parseFloat(latitude) : undefined,
+      longitude: longitude ? parseFloat(longitude) : undefined,
+      mainImageId: mainImageId === '' ? null : mainImageId,
+      gallery: Array.isArray(gallery) ? gallery : undefined,
+      status: status ? parseInt(status) : undefined,
+      area: area ? parseInt(area) : undefined,
+      floorPlanId: floorPlanId === '' ? null : floorPlanId,
+      brochureId: brochureId === '' ? null : brochureId,
+      yearBuilt: yearBuilt ? parseInt(yearBuilt) : undefined,
+      neighborhood,
+      parkingSpaces: parkingSpaces ? parseInt(parkingSpaces) : undefined,
+      bedrooms: bedrooms ? parseInt(bedrooms) : undefined,
+      bathrooms: bathrooms ? parseInt(bathrooms) : undefined,
+      lotSize: lotSize ? parseInt(lotSize) : undefined,
+      listingType,
+      categoryId: (categoryId === '' || categoryId === 'null') ? null : categoryId,
+      videoUrl,
+      price: price ? parseFloat(price) : undefined,
+      metadata
+    };
 
-    console.log('Update Property Request Debug:', {
-      id,
-      tenantId,
-      mainImageId: updateData.mainImageId,
-      gallery: updateData.gallery
-    });
+    // Remove undefined fields to avoid overwriting with null/undefined if not provided
+    Object.keys(updateBody).forEach(key => updateBody[key] === undefined && delete updateBody[key]);
+
+    console.log('Final Update Body for Property:', id, JSON.stringify(updateBody, null, 2));
 
     // Get old price to check for drop
     const oldProperty = await prisma.property.findUnique({
@@ -341,7 +385,7 @@ const updateProperty = async (req, res) => {
     const property = await prisma.property.update({
       where: { id, tenantId },
       data: {
-        ...updateData,
+        ...updateBody,
         propertyAmenities: amenities ? {
           deleteMany: {},
           create: Array.isArray(amenities) ? [...new Set(amenities)].map(id => ({ amenityId: id })) : []
@@ -350,8 +394,8 @@ const updateProperty = async (req, res) => {
     });
 
     // Trigger revival if price dropped
-    if (updateData.price && oldProperty && Number(updateData.price) < Number(oldProperty.price)) {
-      setTimeout(() => leadNurtureService.reviveLeadsOnPriceDrop(id, Number(updateData.price)), 100);
+    if (price && oldProperty && Number(price) < Number(oldProperty.price)) {
+      setTimeout(() => leadNurtureService.reviveLeadsOnPriceDrop(id, Number(price)), 100);
     }
 
     console.log('Update Property Success:', property.id);

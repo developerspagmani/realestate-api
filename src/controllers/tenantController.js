@@ -224,11 +224,11 @@ const deleteTenant = async (req, res) => {
 
     // Check if tenant has dependencies
     const properties = await prisma.property.count({
-      where: { tenant_id: id }
+      where: { tenantId: id }
     });
 
     const users = await prisma.user.count({
-      where: { tenant_id: id }
+      where: { tenantId: id }
     });
 
     if (properties > 0 || users > 0) {
