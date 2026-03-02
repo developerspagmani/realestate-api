@@ -7,7 +7,7 @@ module.exports = {
         unitId: Joi.string().uuid().required(),
         propertyId: Joi.string().uuid().optional().allow('', null),
         startAt: Joi.date().iso().required(),
-        endAt: Joi.date().iso().greater(Joi.ref('startAt')).required(),
+        endAt: Joi.date().iso().greater(Joi.ref('startAt')).optional(),
         status: Joi.number().integer().valid(1, 2, 3, 4, 5).optional(),
         paymentStatus: Joi.number().integer().valid(1, 2, 3).optional(),
         totalPrice: Joi.number().optional(),

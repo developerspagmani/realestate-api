@@ -6,11 +6,19 @@ const ScheduledPostsService = require('../services/social/scheduledPostsService'
 // Instantiate services
 const scheduledPostsService = new ScheduledPostsService();
 
+let isExecuting = false;
+
 /**
  * Background Task Executor
  * This runs the same logic that the Vercel cron endpoint used to run.
  */
 const executeCronTasks = async () => {
+    if (isExecuting) {
+        console.log('[Node-Cron] Skipping execution: Previous task still running.');
+        return;
+    }
+
+    isExecuting = true;
     try {
         console.log('[Node-Cron] Starting background tasks execution...');
 
@@ -21,26 +29,33 @@ const executeCronTasks = async () => {
         const WorkflowService = require('../services/marketing/WorkflowService');
         await WorkflowService.processWorkflows();
 
-        // 3. Proactive Deal Prevention Scanning
-        try {
-            const dealPreventionService = require('../services/dealPreventionService');
-            const leadNurtureService = require('../services/social/leadNurtureService');
+        // 3. Proactive Deal Prevention Scanning (Only every 15 mins to reduce DB load)
+        const minute = new Date().getMinutes();
+        if (minute % 15 === 0) {
+            try {
+                const dealPreventionService = require('../services/dealPreventionService');
+                const leadNurtureService = require('../services/social/leadNurtureService');
 
-            // Get all tenants to scan
-            const { prisma } = require('../config/database');
-            const tenants = await prisma.tenant.findMany({ select: { id: true } });
+                // Get all tenants to scan
+                const { prisma } = require('../config/database');
+                const tenants = await prisma.tenant.findMany({ select: { id: true } });
 
-            for (const tenant of tenants) {
-                await dealPreventionService.scanTenantLeads(tenant.id);
-                await leadNurtureService.scanForRevivals(tenant.id);
+                for (const tenant of tenants) {
+                    await dealPreventionService.scanTenantLeads(tenant.id);
+                    await leadNurtureService.scanForRevivals(tenant.id);
+                }
+            } catch (riskError) {
+                console.error('[Node-Cron] Risk scanning failed:', riskError);
             }
-        } catch (riskError) {
-            console.error('[Node-Cron] Risk scanning failed:', riskError);
+        } else {
+            console.log(`[Node-Cron] Skipping risk scan (Next scan at minute ${Math.ceil((minute + 1) / 15) * 15 % 60})`);
         }
 
         console.log('[Node-Cron] Background tasks processed successfully.');
     } catch (error) {
         console.error('[Node-Cron] Error executing background tasks:', error);
+    } finally {
+        isExecuting = false;
     }
 };
 

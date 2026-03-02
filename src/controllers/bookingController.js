@@ -68,6 +68,14 @@ const createBooking = async (req, res) => {
       qrCode: bodyQrCode
     } = req.body;
 
+    // Auto-calculate endAt if missing (default 1 hour visit)
+    let finalEndAt = endAt;
+    if (!finalEndAt && startAt) {
+      const endDate = new Date(startAt);
+      endDate.setHours(endDate.getHours() + 1);
+      finalEndAt = endDate.toISOString();
+    }
+
     const isAdmin = req.user.role === 2;
     // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
     const tenantId = (isAdmin && bodyTenantId) ? bodyTenantId : req.user.tenantId;
@@ -88,11 +96,11 @@ const createBooking = async (req, res) => {
       const conflict = await tx.booking.findFirst({
         where: {
           unitId,
-          status: { in: [2, 4] }, // 2: confirmed, 4: completed
+          status: { in: [1, 2, 4] }, // 1: pending, 2: confirmed, 4: completed
           OR: [
             {
-              startAt: { lte: new Date(endAt) },
-              endAt: { gte: new Date(startAt) }
+              startAt: { lt: new Date(finalEndAt) },
+              endAt: { gt: new Date(startAt) }
             }
           ]
         },
@@ -116,8 +124,37 @@ const createBooking = async (req, res) => {
         throw new Error('Unit not found');
       }
 
+      // PREVENT DUPLICATE: Check if this user/guest already has a visit scheduled for this property on this day
+      // Only for non-admins (Prospect/User level checks)
+      const isActuallyAdmin = req.user.role === 2;
+      if (!isActuallyAdmin) {
+        const startDateObj = new Date(startAt);
+        const startOfDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate(), 0, 0, 0);
+        const endOfDay = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate(), 23, 59, 59);
+
+        const existingUserBooking = await tx.booking.findFirst({
+          where: {
+            tenantId,
+            status: { in: [1, 2, 4] },
+            unit: { propertyId: unit.propertyId },
+            OR: [
+              (userId ? { userId } : null),
+              (guestEmail ? { guestEmail } : null)
+            ].filter(Boolean),
+            startAt: {
+              gte: startOfDay,
+              lte: endOfDay
+            }
+          }
+        });
+
+        if (existingUserBooking) {
+          throw new Error('Already you have boked with this property and date');
+        }
+      }
+
       // Calculate total price based on unit pricing, or use provided price if quotaion matched
-      let finalPrice = calculateTotalPrice(startAt, endAt, unit);
+      let finalPrice = calculateTotalPrice(startAt, finalEndAt, unit);
       if (bodyTotalPrice) {
         // If provided price is roughly same as calculated (allowing for tax/discounts), use it
         finalPrice = parseFloat(bodyTotalPrice);
@@ -188,7 +225,7 @@ const createBooking = async (req, res) => {
           guestEmail: guestEmail || null,
           guestPhone: guestPhone || null,
           startAt: new Date(startAt),
-          endAt: new Date(endAt),
+          endAt: new Date(finalEndAt),
           status: status !== undefined ? parseInt(status) : 1, // pending
           totalPrice: finalPrice,
           qrCode: qrReference,
@@ -501,12 +538,12 @@ const updateBooking = async (req, res) => {
       propertyId,
       guestName,
       guestEmail,
-      guestPhone,
-      tenantId: queryTenantId
+      guestPhone
     } = req.body;
 
     const isAdmin = req.user.role === 2;
     // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
+    const queryTenantId = req.body.tenantId || req.query.tenantId;
     const effectiveTenantId = (isAdmin && queryTenantId) ? queryTenantId : req.user.tenantId;
 
     // Start transaction for ACID compliance
@@ -541,16 +578,24 @@ const updateBooking = async (req, res) => {
       }
 
       // If updating dates, check availability
-      if (startAt && endAt) {
+      const effectiveStart = startAt ? new Date(startAt) : existingBooking.startAt;
+      let effectiveEnd = endAt ? new Date(endAt) : existingBooking.endAt;
+
+      // If ONLY startAt is provided, auto-calculate effectiveEnd (1 hour later)
+      if (startAt && !endAt) {
+        effectiveEnd = new Date(effectiveStart.getTime() + (60 * 60 * 1000));
+      }
+
+      if (startAt || endAt) {
         const conflictingBookings = await tx.booking.findMany({
           where: {
             id: { not: id }, // Exclude current booking
             unitId: existingBooking.unitId,
-            status: { in: [2, 4] }, // 2: confirmed, 4: completed
+            status: { in: [1, 2, 4] }, // 1: pending, 2: confirmed, 4: completed
             OR: [
               {
-                startAt: { lte: new Date(endAt) },
-                endAt: { gte: new Date(startAt) }
+                startAt: { lt: effectiveEnd },
+                endAt: { gt: effectiveStart }
               }
             ]
           }
@@ -559,12 +604,39 @@ const updateBooking = async (req, res) => {
         if (conflictingBookings.length > 0) {
           throw new Error('Unit is not available for the selected dates');
         }
+
+        // PREVENT DUPLICATE: Check if this user/guest already has another visit scheduled for this property on this new day
+        if (!isAdmin) {
+          const startOfDay = new Date(effectiveStart.getFullYear(), effectiveStart.getMonth(), effectiveStart.getDate(), 0, 0, 0);
+          const endOfDay = new Date(effectiveStart.getFullYear(), effectiveStart.getMonth(), effectiveStart.getDate(), 23, 59, 59);
+
+          const existingUserBooking = await tx.booking.findFirst({
+            where: {
+              id: { not: id }, // Exclude current booking being updated
+              tenantId: existingBooking.tenantId,
+              status: { in: [1, 2, 4] },
+              unit: { propertyId: existingBooking.unit.propertyId },
+              OR: [
+                (userId ? { userId } : (existingBooking.userId ? { userId: existingBooking.userId } : null)),
+                (guestEmail ? { guestEmail } : (existingBooking.guestEmail ? { guestEmail: existingBooking.guestEmail } : null))
+              ].filter(Boolean),
+              startAt: {
+                gte: startOfDay,
+                lte: endOfDay
+              }
+            }
+          });
+
+          if (existingUserBooking) {
+            throw new Error('Already you have boked with this property and date');
+          }
+        }
       }
 
       // Prepare update data
       const updateData = {};
       if (startAt) updateData.startAt = new Date(startAt);
-      if (endAt) updateData.endAt = new Date(endAt);
+      if (startAt || endAt) updateData.endAt = effectiveEnd;
       if (status !== undefined) {
         const statusInt = parseInt(status);
         if (![1, 2, 3, 4, 5].includes(statusInt)) {
@@ -591,9 +663,6 @@ const updateBooking = async (req, res) => {
             include: { unitPricing: true }
           });
         }
-
-        const effectiveStart = startAt ? new Date(startAt) : existingBooking.startAt;
-        const effectiveEnd = endAt ? new Date(endAt) : existingBooking.endAt;
 
         updateData.totalPrice = calculateTotalPrice(effectiveStart, effectiveEnd, pricingUnit);
       }
@@ -819,27 +888,26 @@ const checkAvailability = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required parameters' });
     }
 
+    const isAdmin = req.user.role === 2;
+    const effectiveTenantId = (isAdmin && tenantId) ? tenantId : req.user.tenantId;
+
     const where = {
       unitId,
-      status: { in: [2, 4] }, // 2: confirmed, 4: completed
+      status: { in: [1, 2, 4] }, // 1: pending, 2: confirmed, 4: completed
       OR: [
         {
-          startAt: { lte: new Date(endAt) },
-          endAt: { gte: new Date(startAt) }
+          startAt: { lt: new Date(endAt) },
+          endAt: { gt: new Date(startAt) }
         }
       ]
     };
 
-    // If we're editing, exclude the current booking
     if (bookingId) {
       where.id = { not: bookingId };
     }
 
-    // Add tenant filtering
-    if (tenantId) {
-      where.tenantId = tenantId;
-    } else if (req.user && req.user.role !== 3 && req.user.tenantId) {
-      where.tenantId = req.user.tenantId;
+    if (effectiveTenantId) {
+      where.tenantId = effectiveTenantId;
     }
 
     const conflictingBookings = await prisma.booking.findMany({
@@ -890,7 +958,8 @@ const getAllBookings = async (req, res) => {
       tenantId,
       ownerId,
       industryType,
-      propertyId
+      propertyId,
+      search
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -909,6 +978,21 @@ const getAllBookings = async (req, res) => {
     }
     if (propertyId) {
       where.propertyId = propertyId;
+    }
+
+    // Initialize AND for combining filters if needed
+    where.AND = [];
+
+    if (search) {
+      where.AND.push({
+        OR: [
+          { guestName: { contains: search, mode: 'insensitive' } },
+          { guestEmail: { contains: search, mode: 'insensitive' } },
+          { user: { name: { contains: search, mode: 'insensitive' } } },
+          { unit: { unitCode: { contains: search, mode: 'insensitive' } } },
+          { property: { title: { contains: search, mode: 'insensitive' } } }
+        ]
+      });
     }
 
     // Owner filtering logic
@@ -938,13 +1022,17 @@ const getAllBookings = async (req, res) => {
         });
         const unitIds = units.map(u => u.id);
 
-        where.OR = [
-          { propertyId: { in: propertyIds } },
-          { unitId: { in: unitIds } }
-        ];
+        where.AND.push({
+          OR: [
+            { propertyId: { in: propertyIds } },
+            { unitId: { in: unitIds } }
+          ]
+        });
       }
       // If no access records, they are treated as global owners for that tenant
     }
+
+    if (where.AND.length === 0) delete where.AND;
 
     if (status) where.status = parseInt(status);
     if (userId) where.userId = userId;

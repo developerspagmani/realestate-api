@@ -87,13 +87,19 @@ class DealPreventionService {
         // Cap score at 95 (leaving room for humans to mark 100)
         const finalScore = Math.min(score, 95);
 
-        await prisma.lead.update({
-            where: { id: lead.id },
-            data: {
-                riskScore: finalScore,
-                riskSignals: signals
-            }
-        });
+        // OPTIMIZATION: Only update if anything changed
+        const currentSignals = JSON.stringify(lead.riskSignals || []);
+        const newSignals = JSON.stringify(signals);
+
+        if (lead.riskScore !== finalScore || currentSignals !== newSignals) {
+            await prisma.lead.update({
+                where: { id: lead.id },
+                data: {
+                    riskScore: finalScore,
+                    riskSignals: signals
+                }
+            });
+        }
 
         return { score: finalScore, signals };
     }
