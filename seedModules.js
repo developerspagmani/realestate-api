@@ -4,7 +4,8 @@ const prisma = new PrismaClient();
 async function main() {
     const modules = [
         { name: 'Website Builder', slug: 'website', description: 'Access to create and manage property websites' },
-        { name: 'CMS Portal', slug: 'cms', description: 'Manage custom pages and content' }
+        { name: 'CMS Portal', slug: 'cms', description: 'Manage custom pages and content' },
+        { name: 'Brochure Intelligent', slug: 'brochure_ai', description: 'AI-powered property brochure generator' }
     ];
 
     for (const m of modules) {

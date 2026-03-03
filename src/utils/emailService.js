@@ -366,6 +366,73 @@ const sendTemplateEmail = async (email, subject, html) => {
     }
 };
 
+/**
+ * Send Agent Credentials Email
+ * @param {string} email - Recipient email
+ * @param {string} name - Agent's name
+ * @param {string} username - Agent's username (phone)
+ * @param {string} password - Agent's temporary password
+ */
+const sendAgentCredentialsEmail = async (email, name, username, password) => {
+    try {
+        const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`;
+
+        const mailOptions = {
+            from: `"${APP_NAME}" <${FROM_EMAIL}>`,
+            to: email,
+            subject: `Your Agent Account Credentials - ${APP_NAME}`,
+            html: `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #4f46e5; margin: 0; font-size: 28px;">Welcome, ${name}!</h1>
+                <p style="color: #6b7280; margin-top: 5px;">Your agent profile has been successfully created.</p>
+            </div>
+            
+            <p style="font-size: 16px; line-height: 1.6; color: #374151;">
+                Your account is ready for use. Please use the credentials below to log in to your agent dashboard:
+            </p>
+            
+            <div style="background-color: #f9fafb; padding: 25px; border-radius: 10px; border-left: 4px solid #4f46e5; margin: 25px 0;">
+                <div style="margin-bottom: 15px;">
+                    <span style="font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: bold; display: block;">Login URL</span>
+                    <a href="${loginLink}" style="color: #4f46e5; font-weight: 600; text-decoration: none;">${loginLink}</a>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <span style="font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: bold; display: block;">Username / Phone</span>
+                    <span style="color: #111827; font-weight: 600; font-size: 16px;">${username}</span>
+                </div>
+                <div>
+                    <span style="font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: bold; display: block;">Temporary Password</span>
+                    <span style="color: #111827; font-weight: 600; font-size: 16px; font-family: monospace;">${password}</span>
+                </div>
+            </div>
+
+            <p style="font-size: 14px; color: #ef4444; font-weight: 500;">
+                <i style="margin-right: 5px;">⚠️</i> <strong>Security Tip:</strong> For your security, please change your password after your first login.
+            </p>
+
+            <div style="text-align: center; margin-top: 35px;">
+                <a href="${loginLink}" style="background-color: #4f46e5; color: #ffffff; padding: 14px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block;">Login Now</a>
+            </div>
+
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
+                <p style="font-size: 13px; color: #9ca3af; text-align: center;">
+                    &copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+                </p>
+            </div>
+        </div>
+        `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Agent credentials email sent: %s', info.messageId);
+        return true;
+    } catch (error) {
+        console.error('Error sending agent credentials email:', error);
+        return false;
+    }
+};
+
 module.exports = {
     sendActivationEmail,
     sendAccountConfirmationEmail,
@@ -374,6 +441,7 @@ module.exports = {
     sendBookingEmail,
     sendLeadEmail,
     sendTaskAssignmentEmail,
-    sendTemplateEmail
+    sendTemplateEmail,
+    sendAgentCredentialsEmail
 };
 

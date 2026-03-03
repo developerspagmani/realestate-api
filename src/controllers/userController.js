@@ -114,7 +114,7 @@ const getUsers = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 10,
+      limit = 3,
       search,
       role,
       status,
@@ -372,6 +372,16 @@ const updateUser = async (req, res) => {
       ...(name !== undefined && { name }),
       ...(phone !== undefined && { phone }),
       ...(status !== undefined && { status: parseInt(status) }),
+      ...(req.body.firstName !== undefined && { firstName: req.body.firstName }),
+      ...(req.body.lastName !== undefined && { lastName: req.body.lastName }),
+      ...(req.body.companyName !== undefined && { companyName: req.body.companyName }),
+      ...(req.body.website !== undefined && { website: req.body.website }),
+      ...(req.body.addressLine1 !== undefined && { addressLine1: req.body.addressLine1 }),
+      ...(req.body.addressLine2 !== undefined && { addressLine2: req.body.addressLine2 }),
+      ...(req.body.city !== undefined && { city: req.body.city }),
+      ...(req.body.state !== undefined && { state: req.body.state }),
+      ...(req.body.country !== undefined && { country: req.body.country }),
+      ...(req.body.zipCode !== undefined && { zipCode: req.body.zipCode }),
     };
 
     // Only Admin or Owner can change role (restricted for Owner)

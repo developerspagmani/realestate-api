@@ -132,7 +132,7 @@ const createProperty = async (req, res) => {
 // Get all properties for tenant
 const getProperties = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, city, state, propertyType, tenantId: queryTenantId, ownerId, industryType, agentId } = req.query;
+    const { page = 1, limit = 10, status, city, state, propertyType, categoryId, tenantId: queryTenantId, ownerId, industryType, agentId } = req.query;
     const pageInt = parseInt(page) || 1;
     const limitInt = parseInt(limit) || 10;
     const skip = (pageInt - 1) * limitInt;
@@ -160,6 +160,7 @@ const getProperties = async (req, res) => {
     if (city) where.city = city;
     if (state) where.state = state;
     if (propertyType) where.propertyType = parseInt(propertyType);
+    if (categoryId) where.categoryId = categoryId;
 
     if (agentId) {
       where.agentProperties = {

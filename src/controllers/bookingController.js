@@ -220,6 +220,7 @@ const createBooking = async (req, res) => {
           unitId,
           userId: (bodyUserId && bodyUserId !== '') ? bodyUserId : (req.user.role === 1 ? req.user.id : null),
           leadId: leadId,
+          propertyId: (req.body.propertyId) || unit.propertyId,
           agentId: (agentId && agentId !== '') ? agentId : null,
           guestName: guestName || null,
           guestEmail: guestEmail || null,
@@ -1068,7 +1069,14 @@ const getAllBookings = async (req, res) => {
             select: {
               id: true,
               unitCode: true,
-              unitCategory: true
+              unitCategory: true,
+              propertyId: true,
+              property: {
+                select: {
+                  id: true,
+                  title: true
+                }
+              }
             }
           },
           property: {

@@ -18,10 +18,11 @@ module.exports = {
         firstName: Joi.string().min(2).max(100).optional(),
         lastName: Joi.string().min(2).max(100).optional(),
         phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional().allow('', null),
+        password: Joi.string().min(6).optional(),
         specialization: Joi.string().max(200).optional().allow('', null),
         commissionRate: Joi.number().min(0).max(100).optional(),
         status: Joi.number().integer().valid(1, 2, 3).optional(),
-    }),
+    }).unknown(true),
 
     updateAgentLeadStatus: Joi.object({
         status: Joi.number().integer().valid(1, 2, 3, 4, 5).required(),

@@ -163,7 +163,7 @@ const getDefaultAmenities = async (unit_category) => {
 // Get all units for tenant
 const getUnits = async (req, res) => {
     try {
-        const { page = 1, limit = 10, propertyId, unitCategory, status, tenantId: queryTenantId, ownerId } = req.query;
+        const { page = 1, limit = 10, propertyId, unitCategory, status, tenantId: queryTenantId, ownerId, search } = req.query;
         const isAdmin = req.user.role === 2;
         // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
         const tenantId = (isAdmin && queryTenantId) ? queryTenantId : (isAdmin ? (queryTenantId || null) : (req.tenant?.id || req.user?.tenantId));
@@ -217,10 +217,16 @@ const getUnits = async (req, res) => {
 
         if (unitCategory) where.unitCategory = parseInt(unitCategory);
         if (status) where.status = parseInt(status);
+        if (search) {
+            where.OR = [
+                { unitCode: { contains: search, mode: 'insensitive' } },
+                { slug: { contains: search, mode: 'insensitive' } }
+            ];
+        }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [units, total] = await Promise.all([
+        const [units, total, statusCounts] = await Promise.all([
             prisma.unit.findMany({
                 where,
                 include: {
@@ -248,13 +254,26 @@ const getUnits = async (req, res) => {
                 skip,
                 take: parseInt(limit)
             }),
-            prisma.unit.count({ where })
+            prisma.unit.count({ where }),
+            prisma.unit.groupBy({
+                by: ['status'],
+                where,
+                _count: true
+            })
         ]);
+
+        const counts = {
+            available: statusCounts.find(c => c.status === 1)?._count || 0,
+            occupied: statusCounts.find(c => c.status === 2)?._count || 0,
+            maintenance: statusCounts.find(c => c.status === 3)?._count || 0,
+            sold: statusCounts.find(c => c.status === 4)?._count || 0,
+        };
 
         res.status(200).json({
             success: true,
             data: {
                 units,
+                counts,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),

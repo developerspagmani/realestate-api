@@ -17,7 +17,8 @@ const {
     unassignProperty,
     assignLead,
     getAgentLeads,
-    unassignLead
+    unassignLead,
+    sendAgentCredentials
 } = require('../controllers/agentController');
 
 // All routes require authentication
@@ -48,6 +49,9 @@ router.put('/:id', authorize('ADMIN', 'OWNER'), validate(schemas.updateAgent), u
 
 // Delete agent (Owner/Admin)
 router.delete('/:id', authorize('ADMIN', 'OWNER'), deleteAgent);
+
+// Send credentials email
+router.post('/:id/send-credentials', authorize('ADMIN', 'OWNER'), sendAgentCredentials);
 
 // Get agent commissions (Owner/Admin)
 router.get('/:id/commissions', authorize('ADMIN', 'OWNER'), getAgentCommissions);

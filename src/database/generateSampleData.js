@@ -89,6 +89,7 @@ async function generateSampleData() {
       { name: 'WhatsApp Campaigns', slug: 'social_whatsapp', description: 'WhatsApp campaign management' },
       { name: 'Automation Engine', slug: 'automation_engine', description: 'Lead workflow automation' },
       { name: 'Portal Market', slug: 'portal_market', description: 'Sync leads and post to external portals' },
+      { name: 'Brochure Intelligent', slug: 'brochure_ai', description: 'AI-powered property brochure generator' },
     ];
     const modules = [];
     for (const m of modDefs) {

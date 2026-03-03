@@ -1,5 +1,6 @@
 const { prisma } = require('../config/database');
 const bcrypt = require('bcryptjs');
+const { sendAgentCredentialsEmail } = require('../utils/emailService');
 
 // Create Agent (User + Agent Profile)
 const createAgent = async (req, res) => {
@@ -154,11 +155,14 @@ const updateAgent = async (req, res) => {
 
         const agent = await prisma.$transaction(async (tx) => {
             // Update User fields if provided
-            if (req.body.firstName || req.body.lastName || req.body.phone) {
+            if (req.body.firstName || req.body.lastName || req.body.phone || req.body.password) {
                 const updateData = {};
                 if (req.body.firstName) updateData.firstName = req.body.firstName;
                 if (req.body.lastName) updateData.lastName = req.body.lastName;
                 if (req.body.phone) updateData.phone = req.body.phone;
+                if (req.body.password) {
+                    updateData.passwordHash = await bcrypt.hash(req.body.password, 10);
+                }
 
                 // Update full name if both parts or either are provided
                 if (req.body.firstName || req.body.lastName) {
@@ -698,6 +702,43 @@ const unassignLead = async (req, res) => {
     }
 };
 
+// Send Agent Credentials Email
+const sendAgentCredentials = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { password } = req.body; // Expect plain password to send in email
+
+        if (!password) {
+            return res.status(400).json({ success: false, message: 'Password is required to send credentials email' });
+        }
+
+        const agent = await prisma.agent.findUnique({
+            where: { id },
+            include: { user: true }
+        });
+
+        if (!agent) {
+            return res.status(404).json({ success: false, message: 'Agent not found' });
+        }
+
+        const success = await sendAgentCredentialsEmail(
+            agent.user.email,
+            agent.user.name || `${agent.user.firstName} ${agent.user.lastName}`,
+            agent.user.phone,
+            password
+        );
+
+        if (success) {
+            res.status(200).json({ success: true, message: 'Credentials email sent successfully' });
+        } else {
+            res.status(500).json({ success: false, message: 'Failed to send credentials email' });
+        }
+    } catch (error) {
+        console.error('Send credentials error:', error);
+        res.status(500).json({ success: false, message: 'Error sending credentials' });
+    }
+};
+
 module.exports = {
     createAgent,
     getAllAgents,
@@ -714,5 +755,6 @@ module.exports = {
     unassignProperty,
     assignLead,
     getAgentLeads,
-    unassignLead
+    unassignLead,
+    sendAgentCredentials
 };

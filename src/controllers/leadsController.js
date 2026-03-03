@@ -72,7 +72,6 @@ const getAllLeads = async (req, res) => {
       // If no access records found, we assume they are the Lead/Main owner 
       // and show all leads for the tenant (where.tenantId is already set)
     }
-    console.log('Fetching leads for tenant:', tenantId, 'Query:', req.query);
 
     if (status && status !== 'all') {
       const statusMap = { 'new': 1, 'contacted': 2, 'qualified': 3, 'converted': 4, 'lost': 5 };
