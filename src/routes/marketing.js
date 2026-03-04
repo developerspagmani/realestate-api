@@ -34,6 +34,15 @@ const {
     getLeadRecommendations,
     sendRecommendationEmailDirectly
 } = require('../controllers/recommendationController');
+const {
+    getIntelligentConfig,
+    saveIntelligentConfig,
+    getIntelligentLogs,
+    getIntelligentStats,
+    getLeadSegments,
+    getIntelligentHeatmap,
+    testIntelligentEmail
+} = require('../controllers/intelligentEmailController');
 
 const router = express.Router();
 
@@ -86,5 +95,14 @@ router.post('/workflows/test', testWorkflowExecution);
 // AI Recommendation Routes
 router.get('/recommendations/:id', getLeadRecommendations);
 router.post('/recommendations/:id/send', sendRecommendationEmailDirectly);
+
+// Intelligent Email Automation Config
+router.get('/intelligent/config', getIntelligentConfig);
+router.post('/intelligent/config', saveIntelligentConfig);
+router.get('/intelligent/logs', getIntelligentLogs);
+router.get('/intelligent/stats', getIntelligentStats);
+router.get('/intelligent/segments', getLeadSegments);
+router.get('/intelligent/heatmap', getIntelligentHeatmap);
+router.post('/intelligent/test', testIntelligentEmail);
 
 module.exports = router;

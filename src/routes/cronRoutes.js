@@ -29,6 +29,10 @@ const executeCronTasks = async () => {
         const WorkflowService = require('../services/marketing/WorkflowService');
         await WorkflowService.processWorkflows();
 
+        // 2a. Process Intelligent Email Automation
+        const IntelligentEmailService = require('../services/marketing/IntelligentEmailService');
+        await IntelligentEmailService.processAutomatedEmails();
+
         // 3. Proactive Deal Prevention Scanning (Only every 15 mins to reduce DB load)
         const minute = new Date().getMinutes();
         if (minute % 15 === 0) {

@@ -149,6 +149,7 @@ class PropertyMatchService {
                     ]
                 },
                 include: {
+                    mainImage: { select: { url: true } },
                     units: {
                         where: { status: 1 },
                         include: {

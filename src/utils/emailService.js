@@ -161,56 +161,89 @@ const sendResetPasswordEmail = async (email, token, name) => {
 /**
  * Send property recommendation email to a lead
  */
-const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties) => {
+const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties, tenantInfo = {}) => {
     try {
-        const propertyHtml = properties.map(p => `
-            <div style="margin-bottom: 20px; padding: 15px; background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
-                <h3 style="margin-top: 0; color: #111827;">${p.title}</h3>
-                <p style="margin: 5px 0; font-size: 14px; color: #4b5563;">${p.city} | ${p.propertyType}</p>
-                <div style="margin: 10px 0;">
-                    <strong style="font-size: 12px; color: #6b7280; text-transform: uppercase;">Available Units:</strong>
-                    <ul style="padding-left: 20px; margin: 5px 0;">
-                        ${p.units.slice(0, 3).map(u => `
-                            <li style="font-size: 14px; color: #111827;">${u.unitCode}: <strong>$${Number(u.price).toLocaleString()}</strong></li>
-                        `).join('')}
-                    </ul>
+        const domain = tenantInfo.customDomain ? `https://${tenantInfo.customDomain}` : (process.env.FRONTEND_URL || 'http://localhost:3000');
+        const appTitle = tenantInfo.name || APP_NAME;
+
+        const propertyHtml = properties.map(p => {
+            const mainImage = p.mainImage?.url || 'https://via.placeholder.com/600x400?text=Property+Image';
+            const propertyLink = `${domain}/properties/${p.slug || p.id}`;
+            const symbol = tenantInfo.currencySymbol || '$';
+            const priceRange = p.units?.length > 0
+                ? `${symbol}${Math.min(...p.units.map(u => Number(u.price))).toLocaleString()} - ${symbol}${Math.max(...p.units.map(u => Number(u.price))).toLocaleString()}`
+                : 'Price on Request';
+
+            return `
+            <div style="margin-bottom: 30px; border-radius: 16px; overflow: hidden; background-color: #ffffff; border: 1px solid #eef2f6; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                <img src="${mainImage}" alt="${p.title}" style="width: 100%; height: 200px; object-fit: cover;">
+                <div style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                        <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 700;">${p.title}</h3>
+                        <span style="background-color: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase;">${p.listingType || 'Sale'}</span>
+                    </div>
+                    <p style="margin: 0 0 15px 0; font-size: 14px; color: #64748b; display: flex; align-items: center;">
+                        <span style="margin-right: 5px;">📍</span> ${p.city}${p.state ? `, ${p.state}` : ''}
+                    </p>
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                        <div style="font-size: 13px; color: #475569;"><strong>${p.bedrooms || 0}</strong> Beds</div>
+                        <div style="font-size: 13px; color: #475569;"><strong>${p.bathrooms || 0}</strong> Baths</div>
+                        <div style="font-size: 13px; color: #475569;"><strong>${p.area || 0}</strong> Sqft</div>
+                    </div>
+                    <div style="border-top: 1px solid #f1f5f9; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: #4f46e5; font-size: 18px; font-weight: 800;">${priceRange}</div>
+                        <a href="${propertyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">View Details</a>
+                    </div>
                 </div>
-                <a href="${process.env.FRONTEND_URL}/properties/${p.id}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: bold;">View Details</a>
             </div>
-        `).join('');
+        `}).join('');
 
         const mailOptions = {
-            from: `"${APP_NAME}" <${FROM_EMAIL}>`,
+            from: `"${appTitle}" <${FROM_EMAIL}>`,
             to: leadEmail,
-            subject: 'Exciting Property Matches Just for You!',
+            subject: `Premium Property Matches in ${properties[0]?.city || 'your area'}`,
             html: `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 12px; background-color: #ffffff;">
-            <h2 style="color: #4f46e5; text-align: center;">Top Matches Found!</h2>
-            <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Hello ${leadName},
-            <br><br>
-            Based on your recent interest and activity on our platform, our AI has hand-picked these properties that we think you'll love:
-            </p>
-            
-            ${propertyHtml}
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; color: #334155; margin: 0; padding: 0; background-color: #f8fafc; }
+            </style>
+        </head>
+        <body>
+            <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+                <div style="text-align: center; margin-bottom: 40px;">
+                    <div style="color: #4f46e5; font-size: 24px; font-weight: 900; letter-spacing: -0.025em; margin-bottom: 8px;">${appTitle.toUpperCase()}</div>
+                    <div style="height: 2px; width: 40px; background-color: #4f46e5; margin: 0 auto;"></div>
+                </div>
 
-            <p style="font-size: 14px; color: #6b7280; margin-top: 20px;">
-            If you'd like to see more or schedule a viewing, please reply to this email or contact your agent.
-            </p>
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
-                <p style="font-size: 13px; color: #9ca3af; text-align: center; margin-bottom: 0;">
-                    &copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
-                </p>
+                <div style="background-color: #ffffff; border-radius: 20px; padding: 40px; border: 1px solid #e2e8f0; margin-bottom: 30px;">
+                    <h1 style="color: #0f172a; font-size: 28px; font-weight: 800; text-align: center; margin-top: 0; margin-bottom: 16px; letter-spacing: -0.025em;">Matches Selected for You</h1>
+                    <p style="font-size: 16px; color: #64748b; text-align: center; margin-bottom: 40px;">Hello ${leadName}, based on your preferences and budget, we've identified these premium opportunities that align with your goals.</p>
+                    
+                    ${propertyHtml}
+
+                    <div style="text-align: center; margin-top: 20px;">
+                        <p style="font-size: 14px; color: #94a3b8;">Want to adjust your preferences?<br>Reply to this email or contact your personal advisor.</p>
+                    </div>
+                </div>
+
+                <div style="text-align: center; color: #94a3b8; font-size: 12px;">
+                    <p>&copy; ${new Date().getFullYear()} ${appTitle} Real Estate. All rights reserved.</p>
+                    <p>You received this email because you expressed interest in premium real estate opportunities.</p>
+                </div>
             </div>
-        </div>
+        </body>
+        </html>
         `
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log('Recommendation email sent via SES: %s', info.messageId);
+        console.log(`[Email Service] Recommendation sent to ${leadEmail} (Properties: ${properties.length})`);
         return true;
     } catch (error) {
-        console.error('Error sending recommendation email via SES:', error);
+        console.error('Error sending recommendation email:', error);
         return false;
     }
 };
