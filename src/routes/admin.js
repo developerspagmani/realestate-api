@@ -82,6 +82,7 @@ router.get('/analytics', auth, authorize(2, 3), getSystemAnalytics);
 // Advanced Analytics
 const analyticsController = require('../controllers/analyticsController');
 const dealIntelligenceController = require('../controllers/dealIntelligenceController');
+const propIntelController = require('../controllers/propIntelController');
 
 router.get('/analytics-pro/revenue-funnel', auth, authorize(2, 3), analyticsController.getRevenueAndLeads);
 router.get('/analytics-pro/agent-performance', auth, authorize(2, 3), analyticsController.getAgentPerformance);
@@ -90,5 +91,10 @@ router.get('/analytics-pro/marketing-insights', auth, authorize(2, 3), analytics
 router.get('/analytics-pro/demand-intelligence', auth, authorize(2, 3), analyticsController.getDemandIntelligence);
 router.get('/analytics-pro/deal-intelligence', auth, authorize(2, 3), dealIntelligenceController.getLostDealsIntelligence);
 router.get('/analytics-pro/prevention-insights', auth, authorize(2, 3), dealIntelligenceController.getPreventionInsights);
+
+// PropIntel AI endpoints
+router.get('/prop-intel/diagnostics', auth, authorize(2, 3), propIntelController.getDiagnostics);
+router.get('/prop-intel/pmf-analysis', auth, authorize(2, 3), propIntelController.getPMFAnalysis);
+router.get('/prop-intel/suggestions', auth, authorize(2, 3), propIntelController.getSuggestions);
 
 module.exports = router;
