@@ -59,6 +59,19 @@ const getDashboardStats = async (req, res) => {
 
     const finalWhereBase = { ...whereBase };
 
+    // Get property IDs if owner filter is active to filter leads correctly
+    let leadOwnerFilter = {};
+    if (effectiveOwnerId) {
+      const accessibleProperties = await prisma.userPropertyAccess.findMany({
+        where: { userId: effectiveOwnerId, tenantId: tenantId || undefined },
+        select: { propertyId: true }
+      });
+      if (accessibleProperties.length > 0) {
+        const propertyIds = accessibleProperties.map(p => p.propertyId);
+        leadOwnerFilter = { propertyId: { in: propertyIds } };
+      }
+    }
+
     const [
       totalProperties,
       totalUnits,
@@ -67,7 +80,11 @@ const getDashboardStats = async (req, res) => {
       completedBookings,
       totalRevenue,
       recentBookings,
-      topWorkspaces
+      topWorkspaces,
+      totalLeads,
+      recentLeads,
+      recentProperties,
+      upcomingTasks
     ] = await Promise.all([
       prisma.property.count({
         where: {
@@ -138,6 +155,46 @@ const getDashboardStats = async (req, res) => {
         _sum: { totalPrice: true },
         orderBy: { _count: { id: 'desc' } },
         take: 5
+      }),
+      prisma.lead.count({
+        where: {
+          ...finalWhereBase,
+          ...leadOwnerFilter
+        }
+      }),
+      prisma.lead.findMany({
+        where: {
+          ...finalWhereBase,
+          ...leadOwnerFilter
+        },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          property: { select: { title: true } }
+        }
+      }),
+      prisma.property.findMany({
+        where: {
+          ...finalWhereBase,
+          ...finalOwnerFilter
+        },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          mainImage: { select: { url: true } }
+        }
+      }),
+      prisma.task.findMany({
+        where: {
+          tenantId: tenantId || undefined,
+          status: { in: [1, 2] } // Pending or In Progress
+        },
+        take: 5,
+        orderBy: { dueDate: 'asc' },
+        include: {
+          lead: { select: { name: true } },
+          agent: { include: { user: { select: { name: true } } } }
+        }
       })
     ]);
 
@@ -248,19 +305,6 @@ const getDashboardStats = async (req, res) => {
       }
     }
 
-    // Get property IDs if owner filter is active to filter leads correctly
-    let leadOwnerFilter = {};
-    if (effectiveOwnerId) {
-      const accessibleProperties = await prisma.userPropertyAccess.findMany({
-        where: { userId: effectiveOwnerId, tenantId: tenantId || undefined },
-        select: { propertyId: true }
-      });
-      if (accessibleProperties.length > 0) {
-        const propertyIds = accessibleProperties.map(p => p.propertyId);
-        leadOwnerFilter = { propertyId: { in: propertyIds } };
-      }
-    }
-
     // Optimize historical data fetching to 2 queries total instead of 2 * timeIntervals.length
     const overallStart = timeIntervals[0].start;
     const overallEnd = timeIntervals[timeIntervals.length - 1].end;
@@ -303,10 +347,14 @@ const getDashboardStats = async (req, res) => {
           completedBookings,
           totalRevenue: totalRevenue._sum.totalPrice || 0,
           totalOwners,
+          totalLeads,
           availableUnits: totalUnits - activeBookings,
           occupiedUnits: activeBookings
         },
         recentBookings,
+        recentLeads,
+        recentProperties,
+        upcomingTasks,
         topWorkspaces: topWorkspaceDetails || [],
         historicalData,
         periodLabel
