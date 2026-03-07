@@ -23,8 +23,8 @@ module.exports = {
     }),
 
     login: Joi.object({
-        email: Joi.string().email().optional(),
-        phone: Joi.string().pattern(/^[+]?[\d\s-()]+$/).optional(),
+        email: Joi.string().optional(),
+        phone: Joi.string().optional(),
         password: Joi.string().required(),
     }).or('email', 'phone'),
 

@@ -339,13 +339,14 @@ const login = async (req, res) => {
       });
     }
 
+    const orConditions = [];
+    if (email) orConditions.push({ email });
+    if (phone) orConditions.push({ phone });
+
     // Find user by email OR phone
     const user = await prisma.user.findFirst({
       where: {
-        OR: [
-          email ? { email } : null,
-          phone ? { phone } : null
-        ].filter(Boolean)
+        OR: orConditions.length > 0 ? orConditions : undefined
       },
       include: {
         tenant: true
