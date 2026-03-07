@@ -22,7 +22,9 @@ const createScheduledPost = async (req, res) => {
             mediaUrls,
             imageData,
             videoData,
-            status
+            status,
+            campaignGoal,
+            targetAudience
         } = req.body;
 
         const userId = req.user.id;
@@ -52,7 +54,9 @@ const createScheduledPost = async (req, res) => {
                 isCarousel: isCarousel || false,
                 mediaUrls: mediaUrls || [],
                 imageData: imageData || null,
-                videoData: videoData || null
+                videoData: videoData || null,
+                campaignGoal: campaignGoal || null,
+                targetAudience: targetAudience || null
             },
             include: {
                 property: true,
@@ -109,7 +113,9 @@ const createDraft = async (req, res) => {
             isCarousel,
             mediaUrls,
             imageData,
-            videoData
+            videoData,
+            campaignGoal,
+            targetAudience
         } = req.body;
 
         const userId = req.user.id;
@@ -138,7 +144,9 @@ const createDraft = async (req, res) => {
                 isCarousel: isCarousel || false,
                 mediaUrls: mediaUrls || [],
                 imageData: imageData || null,
-                videoData: videoData || null
+                videoData: videoData || null,
+                campaignGoal: campaignGoal || null,
+                targetAudience: targetAudience || null
             },
             include: {
                 property: true

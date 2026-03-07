@@ -968,6 +968,8 @@ model ScheduledPost {
   mediaUrls        String[]         @map("media_urls")
   imageData        Json?            @map("image_data")
   videoData        Json?            @map("video_data")
+  campaignGoal     String?          @map("campaign_goal")
+  targetAudience   String?          @map("target_audience")
   executionResults Json?            @map("execution_results")
   lastPostedAt     DateTime?        @map("last_posted_at")
   createdAt        DateTime         @default(now()) @map("created_at")

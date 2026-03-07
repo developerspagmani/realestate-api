@@ -163,8 +163,8 @@ class LeadNurtureService {
 
             if (minPropPrice === Infinity) return false;
 
-            // Fuzzy: Allow if property price is up to 15% higher than their "max"
-            const maxAllowed = filters.maxPrice * 1.15;
+            // Fuzzy: Allow if property price is up to 10% higher than their "max"
+            const maxAllowed = filters.maxPrice * 1.1;
             if (minPropPrice > maxAllowed) return false;
         }
 
@@ -177,6 +177,60 @@ class LeadNurtureService {
     }
 
     /**
+     * Construct the match message for preview or sending
+     */
+    async constructMatchMessage(lead, properties) {
+        const maxBudget = Number(lead.preferences?.maxPrice || lead.budget || 0);
+
+        // 1. Group properties into Perfect and Near matches
+        const perfectMatches = [];
+        const nearMatches = [];
+
+        properties.forEach(p => {
+            let minPropPrice = Infinity;
+            p.units?.forEach(u => {
+                u.unitPricing?.forEach(pr => {
+                    if (Number(pr.price) < minPropPrice) minPropPrice = Number(pr.price);
+                });
+            });
+
+            if (maxBudget > 0 && minPropPrice !== Infinity && minPropPrice > maxBudget) {
+                nearMatches.push({ ...p, minPrice: minPropPrice });
+            } else {
+                perfectMatches.push({ ...p, minPrice: minPropPrice });
+            }
+        });
+
+        // 2. Craft Message
+        let messageBody = `🏠 *New Property Match Found!*\n\nHi ${lead.name}, I've found some exciting properties for you: \n`;
+
+        if (perfectMatches.length > 0) {
+            messageBody += `\n✅ *Perfectly in your budget:*\n`;
+            perfectMatches.forEach(p => {
+                messageBody += `\n✨ *${p.title}*\n📍 ${p.city}\n🔗 View: ${process.env.NEXT_PUBLIC_ROOT_DOMAIN}/p/${p.slug}\n`;
+            });
+        }
+
+        if (nearMatches.length > 0) {
+            messageBody += `\n🌟 *High-Value Suggestions (Slightly Above Budget):*\n`;
+            nearMatches.forEach(p => {
+                const lac = (maxBudget / 100000).toFixed(1);
+                messageBody += `\n✨ *${p.title}*\n💰 *Note:* Only slightly above your ₹${lac} Lac limit, but it offers significantly better amenities!\n📍 ${p.city}\n🔗 View: ${process.env.NEXT_PUBLIC_ROOT_DOMAIN}/p/${p.slug}\n`;
+            });
+        }
+
+        messageBody += `\nInterested? Reply with "Book [Property Name]" to schedule a visit!`;
+
+        return {
+            message: messageBody,
+            counts: {
+                perfect: perfectMatches.length,
+                near: nearMatches.length
+            }
+        };
+    }
+
+    /**
      * Send Multi-Channel Notifications
      */
     async notifyLeadOfMatches(lead, properties) {
@@ -184,13 +238,9 @@ class LeadNurtureService {
             const hasWhatsApp = !!lead.phone;
             const hasEmail = !!lead.email;
 
-            let messageBody = `🏠 *New Property Match Found!*\n\nHi ${lead.name}, we found properties matching your preferences:\n`;
+            const { message: messageBody, counts } = await this.constructMatchMessage(lead, properties);
 
-            properties.forEach(p => {
-                messageBody += `\n✨ *${p.title}*\n📍 ${p.city}\n🔗 View: ${process.env.NEXT_PUBLIC_ROOT_DOMAIN}/p/${p.slug}\n`;
-            });
-
-            // 1. WhatsApp Notification
+            // 3. WhatsApp Notification
             if (hasWhatsApp) {
                 // Find a WhatsApp account for this tenant
                 const account = await prisma.connectedAccount.findFirst({
@@ -210,13 +260,13 @@ class LeadNurtureService {
                 }
             }
 
-            // 2. Email Notification (Nurture)
+            // 4. Email Notification (Nurture)
             if (hasEmail) {
                 console.log(`[LeadNurture] Sending property match email to ${lead.email}`);
                 await emailService.sendPropertyRecommendationEmail(lead.email, lead.name, properties);
             }
 
-            // 3. Log Interaction
+            // 5. Log Interaction
             await prisma.leadInteraction.create({
                 data: {
                     tenantId: lead.tenantId,
@@ -224,7 +274,11 @@ class LeadNurtureService {
                     type: 'PROPERTY_MATCH',
                     metadata: {
                         propertyIds: properties.map(p => p.id),
-                        channels: ['WHATSAPP', 'EMAIL']
+                        channels: ['WHATSAPP', 'EMAIL'],
+                        matchCounts: {
+                            perfect: perfectMatches.length,
+                            near: nearMatches.length
+                        }
                     }
                 }
             });

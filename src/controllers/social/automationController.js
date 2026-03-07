@@ -375,6 +375,62 @@ const automationController = {
             console.error('[AutomationController] Force match error:', error);
             res.status(500).json({ success: false, message: 'Error executing matching engine', details: error.message });
         }
+    },
+
+    /**
+     * Preview Match Engine
+     */
+    previewMatch: async (req, res) => {
+        try {
+            const { leadId, tenantId } = req.body;
+            // For admins, tenantId might be passed to force a context
+            const effectiveTenantId = req.user.role === 'ADMIN' ? (tenantId || null) : req.user.tenantId;
+
+            const leadNurtureService = require('../../services/social/leadNurtureService');
+            const propertyService = require('../../services/social/propertyService');
+
+            const lead = await prisma.lead.findUnique({
+                where: { id: leadId },
+                include: { tenant: true }
+            });
+
+            if (!lead) {
+                return res.status(404).json({ success: false, message: 'Lead not found' });
+            }
+
+            const filters = lead.preferences || {};
+            if (Object.keys(filters).length === 0) {
+                return res.status(400).json({ success: false, message: 'Lead has no preferences set for matching.' });
+            }
+
+            const properties = await propertyService.searchProperties(filters, effectiveTenantId || lead.tenantId);
+
+            if (properties.length === 0) {
+                return res.json({
+                    success: true,
+                    data: {
+                        matchCount: 0,
+                        message: "No properties found matching this lead's criteria."
+                    }
+                });
+            }
+
+            const { message, counts } = await leadNurtureService.constructMatchMessage(lead, properties);
+
+            res.json({
+                success: true,
+                data: {
+                    matchCount: properties.length,
+                    perfectCount: counts.perfect,
+                    nearCount: counts.near,
+                    message,
+                    properties: properties.map(p => ({ id: p.id, title: p.title, price: p.price }))
+                }
+            });
+        } catch (error) {
+            console.error('[AutomationController] Preview Match error:', error);
+            res.status(500).json({ success: false, message: 'Internal server error' });
+        }
     }
 };
 

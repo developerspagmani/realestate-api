@@ -14,6 +14,7 @@ router.delete('/workflows/:id', automationController.deleteWorkflow);
 router.post('/workflows/:id/toggle', automationController.toggleWorkflowStatus);
 
 // AI Engine
+router.post('/preview-match', automationController.previewMatch);
 router.post('/force-match', automationController.forceMatch);
 
 module.exports = router;

@@ -41,15 +41,19 @@ class PropertyService {
                 where.bedrooms = { gte: filters.bedrooms };
             }
 
-            // Price filtering via Units and UnitPricing
+            // Price filtering via Units and UnitPricing with 10% flexibility
             if (filters.minPrice || filters.maxPrice) {
+                // Apply 10% flexibility for better lead conversion
+                const minBuffer = filters.minPrice ? Number(filters.minPrice) * 0.9 : null;
+                const maxBuffer = filters.maxPrice ? Number(filters.maxPrice) * 1.1 : null;
+
                 where.units = {
                     some: {
                         unitPricing: {
                             some: {
                                 price: {
-                                    ...(filters.minPrice ? { gte: filters.minPrice } : {}),
-                                    ...(filters.maxPrice ? { lte: filters.maxPrice } : {})
+                                    ...(minBuffer ? { gte: minBuffer } : {}),
+                                    ...(maxBuffer ? { lte: maxBuffer } : {})
                                 }
                             }
                         }

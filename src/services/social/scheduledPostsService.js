@@ -123,8 +123,37 @@ class ScheduledPostsService {
         const pageAccessToken = page.access_token;
 
         // Prepare the post data
+        let message = `${post.title}\n\n${post.description || ''}`.trim();
+
+        // BRAND BOOSTER: Add Goal-Specific CTA
+        if (post.campaignGoal === 'LEAD_GENERATION') {
+            message += `\n\n📩 Ready to see it? Message us for a private viewing!`;
+        } else if (post.campaignGoal === 'SALES') {
+            message += `\n\n💰 Special pricing available. Act now!`;
+        }
+
+        // AUDIENCE BOOSTER: Add Audience-specific hook
+        if (post.targetAudience === 'FIRST_TIME') {
+            message += `\n\n🔑 Perfect for first-time buyers! We help with all the paperwork.`;
+        } else if (post.targetAudience === 'INVESTORS') {
+            message += `\n\n📈 High ROI potential in a growing neighborhood.`;
+        }
+
+        // DYNAMIC CTA: Add WhatsApp Link if possible
+        if (post.user && post.user.phone) {
+            const cleanPhone = post.user.phone.replace(/[^0-9]/g, '');
+            if (cleanPhone) {
+                const waLink = `https://wa.me/${cleanPhone}?text=I%20am%20interested%20in%20${encodeURIComponent(post.title)}`;
+                message += `\n\n📲 WhatsApp us: ${waLink}`;
+            }
+        }
+
+        if (post.hashtags) {
+            message += `\n\n${post.hashtags}`;
+        }
+
         const postData = {
-            message: `${post.title}\n\n${post.description || ''}\n\n${post.hashtags || ''}`.trim(),
+            message: message.trim(),
             access_token: pageAccessToken,
             published: true // Explicitly set to true to ensure it's not a dark post
         };
@@ -227,7 +256,37 @@ class ScheduledPostsService {
             throw new Error('Instagram posts require at least one image or video');
         }
 
-        const caption = `${post.title}\n\n${post.description || ''}\n\n${post.hashtags || ''}`.trim();
+        // Prepare the caption
+        let caption = `${post.title}\n\n${post.description || ''}`.trim();
+
+        // BRAND BOOSTER: Add Goal-Specific CTA
+        if (post.campaignGoal === 'LEAD_GENERATION') {
+            caption += `\n\n📩 Ready to see it? Message us for a private viewing!`;
+        } else if (post.campaignGoal === 'SALES') {
+            caption += `\n\n💰 Special pricing available. Act now!`;
+        }
+
+        // AUDIENCE BOOSTER: Add Audience-specific hook
+        if (post.targetAudience === 'FIRST_TIME') {
+            caption += `\n\n🔑 Perfect for first-time buyers! We help with all the paperwork.`;
+        } else if (post.targetAudience === 'INVESTORS') {
+            caption += `\n\n📈 High ROI potential in a growing neighborhood.`;
+        }
+
+        // DYNAMIC CTA: Add WhatsApp Link if possible
+        if (post.user && post.user.phone) {
+            const cleanPhone = post.user.phone.replace(/[^0-9]/g, '');
+            if (cleanPhone) {
+                const waLink = `https://wa.me/${cleanPhone}?text=I%20am%20interested%20in%20${encodeURIComponent(post.title)}`;
+                caption += `\n\n📲 WhatsApp us: ${waLink}`;
+            }
+        }
+
+        if (post.hashtags) {
+            caption += `\n\n${post.hashtags}`;
+        }
+
+        caption = caption.trim();
 
         if (post.isVideo) {
             // Video post
