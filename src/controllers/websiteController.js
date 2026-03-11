@@ -324,6 +324,32 @@ const websiteController = {
                 }
             }
 
+            // SMART DETECTION: If still no email/phone, scan all keys in body (for Marketing Forms with custom IDs)
+            if (!finalEmail || !finalPhone || !finalName || !finalBudget) {
+                Object.entries(req.body).forEach(([key, value]) => {
+                    if (typeof value !== 'string') return;
+                    const val = value.trim();
+                    if (!val) return;
+
+                    // Match Email
+                    if (!finalEmail && val.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                        finalEmail = val.toLowerCase();
+                    }
+                    // Match Phone (digits, plus, spaces, dashes - minimal 8 chars)
+                    else if (!finalPhone && /^[+]?[0-9\s\-]{8,20}$/.test(val) && (key.toLowerCase().includes('phone') || key.toLowerCase().includes('tel') || key.toLowerCase().includes('contact'))) {
+                        finalPhone = val;
+                    }
+                    // Generic name fallback if missing
+                    else if (!finalName && key.toLowerCase().includes('name') && val.length > 2) {
+                        finalName = val;
+                    }
+                    // Match Budget
+                    else if (!finalBudget && key.toLowerCase().includes('budget')) {
+                        finalBudget = val;
+                    }
+                });
+            }
+
             if (!finalEmail && !finalPhone && !visitorId) {
                 return res.status(400).json({ success: false, message: 'Contact information or identity required.' });
             }
@@ -362,7 +388,11 @@ const websiteController = {
                         propertyId: propertyId || lead.propertyId,
                         unitId: unitId || lead.unitId,
                         // Persist visitorId if it matches but was missing from DB
-                        ...(visitorId && !lead.visitorId ? { visitorId } : {})
+                        ...(visitorId && !lead.visitorId ? { visitorId } : {}),
+                        // Update basic info if they were provided and different
+                        ...(finalName && { name: finalName }),
+                        ...(finalPhone && { phone: finalPhone }),
+                        ...(finalBudget && { budget: finalBudget })
                     }
                 });
             } else {
