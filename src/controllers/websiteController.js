@@ -300,7 +300,7 @@ const websiteController = {
     captureLead: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, email, phone, contact, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
+            const { name, email, phone, contact, visitorId, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
             const isBooking = bodyIsBooking === true || bodyIsBooking === 'true';
 
             const website = await prisma.website.findUnique({ where: { id } });
@@ -322,17 +322,18 @@ const websiteController = {
                 }
             }
 
-            if (!finalEmail && !finalPhone) {
-                return res.status(400).json({ success: false, message: 'Contact information required (email or phone).' });
+            if (!finalEmail && !finalPhone && !visitorId) {
+                return res.status(400).json({ success: false, message: 'Contact information or identity required.' });
             }
 
-            // Upsert or Check-Update to avoid duplicates
+            // Upsert or Check-Update to avoid duplicates (Identity Resolution Phase)
             let lead = await prisma.lead.findFirst({
                 where: {
                     tenantId: website.tenantId,
                     OR: [
                         ...(finalEmail ? [{ email: finalEmail }] : []),
-                        ...(finalPhone ? [{ phone: finalPhone }] : [])
+                        ...(finalPhone ? [{ phone: finalPhone }] : []),
+                        ...(visitorId ? [{ visitorId: visitorId }] : [])
                     ]
                 }
             });
@@ -345,21 +346,28 @@ const websiteController = {
             }
 
             if (lead) {
+                // Determine if we found it via visitorId but contact info is new
+                const emailChanged = finalEmail && lead.email !== finalEmail;
+                const phoneChanged = finalPhone && lead.phone !== finalPhone;
+
                 lead = await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
-                        notes: (lead.notes || '') + `\n[Update] Re-engaged via Website: ${website.name}.`,
+                        notes: (lead.notes || '') + `\n[Update] Re-engaged via Website: ${website.name}.${emailChanged ? ` (New email used: ${finalEmail})` : ''}`,
                         updatedAt: new Date(),
                         propertyId: propertyId || lead.propertyId,
-                        unitId: unitId || lead.unitId
+                        unitId: unitId || lead.unitId,
+                        // Persist visitorId if it matches but was missing from DB
+                        ...(visitorId && !lead.visitorId ? { visitorId } : {})
                     }
                 });
             } else {
                 lead = await prisma.lead.create({
                     data: {
                         name: name || 'Website Visitor',
-                        email: finalEmail,
-                        phone: finalPhone,
+                        email: finalEmail || null,
+                        phone: finalPhone || null,
+                        visitorId: visitorId || null,
                         source: sourceId,
                         notes: notes || (isBooking ? 'Booking request captured from website.' : `Lead captured from website: ${website.name}`),
                         tenantId: website.tenantId,

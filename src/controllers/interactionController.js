@@ -19,27 +19,35 @@ const SCORING_RULES = {
  */
 const trackInteraction = async (req, res) => {
     try {
-        const { leadId, email, type, metadata } = req.body;
+        const { leadId, email, visitorId, type, metadata } = req.body;
         const tenantId = req.tenant?.id;
 
-        if (!type || (!leadId && !email)) {
-            return res.status(400).json({ success: false, message: 'Type and Lead identifier required' });
+        if (!type || (!leadId && !email && !visitorId)) {
+            return res.status(400).json({ success: false, message: 'Type and Lead identifier (ID, email, or visitorId) required' });
         }
 
-        // Find the lead
+        // Find the lead with Identity Resolution
         let lead;
         if (leadId) {
             lead = await prisma.lead.findUnique({ where: { id: leadId } });
-        } else {
-            // Find by email if leadId not provided (useful for tracking emails)
+        } else if (email) {
+            // Find by email if leadId not provided
             lead = await prisma.lead.findFirst({
                 where: { email, tenantId },
+                orderBy: { createdAt: 'desc' }
+            });
+        } else if (visitorId) {
+            // Find by browser-persistent visitor ID
+            lead = await prisma.lead.findFirst({
+                where: { visitorId, tenantId },
                 orderBy: { createdAt: 'desc' }
             });
         }
 
         if (!lead) {
-            return res.status(404).json({ success: false, message: 'Lead not found' });
+            // Log as anonymous or ignore depending on business rule
+            // For now, return 404 to match existing behavior but could be used to create 'ghost' leads
+            return res.status(404).json({ success: false, message: 'Lead not found for provided identifiers' });
         }
 
         const scoreWeight = SCORING_RULES[type] || 0;
