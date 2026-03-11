@@ -300,7 +300,7 @@ const websiteController = {
     captureLead: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, email, phone, budget, contact, visitorId, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
+            const { name, email, phone, contact, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
             const isBooking = bodyIsBooking === true || bodyIsBooking === 'true';
 
             const website = await prisma.website.findUnique({ where: { id } });
@@ -322,6 +322,32 @@ const websiteController = {
                 } else {
                     finalPhone = contact;
                 }
+            }
+
+            // SMART DETECTION: If still no email/phone, scan all keys in body (for Marketing Forms with custom IDs)
+            if (!finalEmail || !finalPhone || !finalName || !finalBudget) {
+                Object.entries(req.body).forEach(([key, value]) => {
+                    if (typeof value !== 'string') return;
+                    const val = value.trim();
+                    if (!val) return;
+
+                    // Match Email
+                    if (!finalEmail && val.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                        finalEmail = val.toLowerCase();
+                    }
+                    // Match Phone (digits, plus, spaces, dashes - minimal 8 chars)
+                    else if (!finalPhone && /^[+]?[0-9\s\-]{8,20}$/.test(val) && (key.toLowerCase().includes('phone') || key.toLowerCase().includes('tel') || key.toLowerCase().includes('contact'))) {
+                        finalPhone = val;
+                    }
+                    // Generic name fallback if missing
+                    else if (!finalName && key.toLowerCase().includes('name') && val.length > 2) {
+                        finalName = val;
+                    }
+                    // Match Budget
+                    else if (!finalBudget && key.toLowerCase().includes('budget')) {
+                        finalBudget = val;
+                    }
+                });
             }
 
             if (!finalEmail && !finalPhone && !visitorId) {
@@ -360,19 +386,15 @@ const websiteController = {
                         notes: (lead.notes || '') + `\n[Update] Re-engaged via Website: ${website.name}.${emailChanged ? ` (New email used: ${finalEmail})` : ''}`,
                         updatedAt: new Date(),
                         propertyId: propertyId || lead.propertyId,
-                        unitId: unitId || lead.unitId,
-                        // Persist visitorId if it matches but was missing from DB
-                        ...(visitorId && !lead.visitorId ? { visitorId } : {})
+                        unitId: unitId || lead.unitId
                     }
                 });
             } else {
                 lead = await prisma.lead.create({
                     data: {
-                        name: finalName || 'Website Visitor',
-                        email: finalEmail || null,
-                        phone: finalPhone || null,
-                        budget: finalBudget ? Number(finalBudget) : null,
-                        visitorId: visitorId || null,
+                        name: name || 'Website Visitor',
+                        email: finalEmail,
+                        phone: finalPhone,
                         source: sourceId,
                         notes: notes || (isBooking ? 'Booking request captured from website.' : `Lead captured from website: ${website.name}`),
                         tenantId: website.tenantId,
