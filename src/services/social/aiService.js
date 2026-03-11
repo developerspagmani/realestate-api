@@ -233,9 +233,7 @@ Or just tell me what you're looking for, and I'll help you! 😊`;
     /**
      * Generate a friendly "no results" message
      */
-    getNoResultsMessage(filters, businessData = {}) {
-        const businessName = businessData.businessName || 'Virpanix Real Estate';
-
+    getNoResultsMessage(filters) {
         let message = `😔 I couldn't find any properties matching`;
 
         const criteria = [];

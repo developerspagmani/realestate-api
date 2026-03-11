@@ -276,8 +276,8 @@ class LeadNurtureService {
                         propertyIds: properties.map(p => p.id),
                         channels: ['WHATSAPP', 'EMAIL'],
                         matchCounts: {
-                            perfect: perfectMatches.length,
-                            near: nearMatches.length
+                            perfect: counts.perfect,
+                            near: counts.near
                         }
                     }
                 }

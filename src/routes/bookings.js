@@ -25,15 +25,15 @@ router.post('/', validate(schemas.createBooking), createBooking);
 router.get('/my', getUserBookings);
 router.get('/check-availability', checkAvailability);
 
-router.get('/stats', authorize(2, 3), getBookingStats);
+router.get('/stats', authorize(2, 3, 4), getBookingStats);
 
-router.get('/', authorize(2, 3), getAllBookings);
+router.get('/', authorize(2, 3, 4), getAllBookings);
 
 router.get('/:id', getBookingById);
 router.put('/:id/cancel', cancelBooking);
-router.put('/:id', authorize(2, 3), validate(schemas.updateBooking), updateBooking);
-router.put('/:id/status', authorize(2, 3), updateBookingStatus);
-router.put('/:id/send-info', authorize(2, 3), sendVisitInfo);
-router.delete('/:id', authorize(2, 3), deleteBooking);
+router.put('/:id', authorize(2, 3, 4), validate(schemas.updateBooking), updateBooking);
+router.put('/:id/status', authorize(2, 3, 4), updateBookingStatus);
+router.put('/:id/send-info', authorize(2, 3, 4), sendVisitInfo);
+router.delete('/:id', authorize(2, 3, 4), deleteBooking);
 
 module.exports = router;

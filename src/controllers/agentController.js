@@ -135,7 +135,7 @@ const getAllAgents = async (req, res) => {
 const updateAgent = async (req, res) => {
     try {
         const { id } = req.params;
-        const { specialization, commissionRate, status, tenantId: bodyTenantId } = req.body;
+        const { specialization, commissionRate, status } = req.body;
 
         // If admin, they can update any agent. If owner, check ownership.
         const isAdmin = req.user?.role === 2;
@@ -385,6 +385,7 @@ const getMyLeads = async (req, res) => {
         // Flatten checks for compatibility if frontend expects direct lead usage
         const leads = assignments.map(a => ({
             ...a.lead,
+            assignmentId: a.id,
             assignedAt: a.assignedAt, // Use assignment time
             isPrimary: a.isPrimary
         }));
@@ -499,6 +500,8 @@ const getMyProfile = async (req, res) => {
 // Assign Property to Agent
 const assignProperty = async (req, res) => {
     try {
+        const { agentId, propertyId, commissionRate, isPrimary, notes } = req.body;
+
         const isAdmin = req.user?.role === 2;
         const tenantId = isAdmin ? (req.body.tenantId || req.user.tenantId) : req.user.tenantId;
 

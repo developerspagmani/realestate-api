@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const integrationController = require('../controllers/integrationController');
-const { auth, authorize } = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Protected Routes (Admin/Owner UI)
 router.get('/', auth, integrationController.getIntegrations);

@@ -57,7 +57,7 @@ const websiteController = {
             }
 
             res.json({ success: true, data: website });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Server error fetching website.' });
         }
     },
@@ -161,7 +161,7 @@ const websiteController = {
             }
 
             res.json({ success: true, message: 'Website deleted successfully.' });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Server error deleting website.' });
         }
     },
@@ -300,14 +300,16 @@ const websiteController = {
     captureLead: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, email, phone, contact, visitorId, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
+            const { name, email, phone, budget, contact, visitorId, notes, source, propertyId, unitId, isBooking: bodyIsBooking, startAt, endAt } = req.body;
             const isBooking = bodyIsBooking === true || bodyIsBooking === 'true';
 
             const website = await prisma.website.findUnique({ where: { id } });
             if (!website) return res.status(404).json({ success: false, message: 'Website not found.' });
 
+            let finalName = name;
             let finalEmail = email;
             let finalPhone = phone;
+            let finalBudget = budget;
 
             // Fallback to contact field if email/phone not explicitly provided (e.g. from chatbot)
             if (contact && !finalEmail && !finalPhone) {
@@ -353,6 +355,8 @@ const websiteController = {
                 lead = await prisma.lead.update({
                     where: { id: lead.id },
                     data: {
+                        name: finalName || lead.name,
+                        budget: finalBudget ? Number(finalBudget) : lead.budget,
                         notes: (lead.notes || '') + `\n[Update] Re-engaged via Website: ${website.name}.${emailChanged ? ` (New email used: ${finalEmail})` : ''}`,
                         updatedAt: new Date(),
                         propertyId: propertyId || lead.propertyId,
@@ -364,9 +368,10 @@ const websiteController = {
             } else {
                 lead = await prisma.lead.create({
                     data: {
-                        name: name || 'Website Visitor',
+                        name: finalName || 'Website Visitor',
                         email: finalEmail || null,
                         phone: finalPhone || null,
+                        budget: finalBudget ? Number(finalBudget) : null,
                         visitorId: visitorId || null,
                         source: sourceId,
                         notes: notes || (isBooking ? 'Booking request captured from website.' : `Lead captured from website: ${website.name}`),

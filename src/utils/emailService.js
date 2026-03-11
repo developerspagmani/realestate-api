@@ -1,8 +1,8 @@
 const nodemailer = require('nodemailer');
-const { SESClient, SendRawEmailCommand } = require('@aws-sdk/client-ses');
+const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 
 // Initialize SES Client
-const ses = new SESClient({
+const ses = new SESv2Client({
     region: process.env.AWS_REGION || 'ap-south-1',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -12,7 +12,7 @@ const ses = new SESClient({
 
 // Create transporter using SES
 const transporter = nodemailer.createTransport({
-    SES: { ses, aws: { SendRawEmailCommand } },
+    SES: { sesClient: ses, SendEmailCommand },
 });
 
 const APP_NAME = process.env.APP_NAME || 'Virpanix';
@@ -239,7 +239,7 @@ const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties, 
         `
         };
 
-        const info = await transporter.sendMail(mailOptions);
+        const _info = await transporter.sendMail(mailOptions);
         console.log(`[Email Service] Recommendation sent to ${leadEmail} (Properties: ${properties.length})`);
         return true;
     } catch (error) {

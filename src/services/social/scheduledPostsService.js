@@ -386,7 +386,7 @@ class ScheduledPostsService {
     /**
      * Publish to Google My Business
      */
-    async publishToGoogle(post, account) {
+    async publishToGoogle(_post, _account) {
         // Google My Business posting implementation
         // This is a simplified version - full implementation would require location selection
         throw new Error('Google My Business posting not fully implemented yet');
@@ -438,7 +438,7 @@ class ScheduledPostsService {
             };
         } catch (error) {
             console.error('Error fetching Facebook metrics:', error.response?.data || error.message);
-            throw new Error('Failed to fetch Facebook metrics');
+            throw new Error('Failed to fetch Facebook metrics', { cause: error });
         }
     }
 
@@ -483,7 +483,7 @@ class ScheduledPostsService {
             };
         } catch (error) {
             console.error('Error fetching Instagram metrics:', error.response?.data || error.message);
-            throw new Error('Failed to fetch Instagram metrics');
+            throw new Error('Failed to fetch Instagram metrics', { cause: error });
         }
     }
 

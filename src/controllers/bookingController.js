@@ -447,6 +447,13 @@ const updateBookingStatus = async (req, res) => {
         throw new Error('Tenant ID is required');
       }
 
+      // Agent role security: Enforce agent can only update their own bookings
+      if (req.user.role === 4) {
+        const agentProfile = await tx.agent.findUnique({ where: { userId: req.user.id } });
+        if (!agentProfile) throw new Error('Agent profile not found');
+        where.agentId = agentProfile.id;
+      }
+
       const updatedBooking = await tx.booking.update({
         where,
         data: { status: statusInt },
@@ -556,6 +563,13 @@ const updateBooking = async (req, res) => {
         where.tenantId = effectiveTenantId;
       } else if (!isAdmin) {
         throw new Error('Tenant ID is required');
+      }
+
+      // Agent role security: Enforce agent can only update their own bookings
+      if (req.user.role === 4) {
+        const agentProfile = await tx.agent.findUnique({ where: { userId: req.user.id } });
+        if (!agentProfile) throw new Error('Agent profile not found');
+        where.agentId = agentProfile.id;
       }
 
       // Get existing booking first
@@ -803,7 +817,7 @@ const updateBooking = async (req, res) => {
 const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason: _reason } = req.body;
     const { tenantId } = req.query;
     const isAdmin = req.user.role === 2;
     // SEC-01 fix: Force tenantId from user context for non-admins to prevent IDOR
@@ -960,6 +974,7 @@ const getAllBookings = async (req, res) => {
       ownerId,
       industryType,
       propertyId,
+      agentId,
       search
     } = req.query;
 
@@ -1038,6 +1053,15 @@ const getAllBookings = async (req, res) => {
     if (status) where.status = parseInt(status);
     if (userId) where.userId = userId;
     if (unitId) where.unitId = unitId;
+
+    // Agent role security: Enforce agentId if role is 4
+    if (req.user.role === 4) {
+      const agentProfile = await prisma.agent.findUnique({ where: { userId: req.user.id } });
+      if (!agentProfile) return res.status(403).json({ success: false, message: 'Agent profile not found' });
+      where.agentId = agentProfile.id;
+    } else if (agentId) {
+      where.agentId = agentId;
+    }
 
     if (startDate || endDate) {
       where.startAt = {};

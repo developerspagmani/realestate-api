@@ -233,15 +233,16 @@ class WorkflowService {
                     }
                     break;
 
-                case 'DELAY':
+                case 'DELAY': {
                     const duration = currentStep.duration || 1;
                     const unit = currentStep.unit || 'hours';
                     const multiplier = { 'minutes': 60, 'hours': 3600, 'days': 86400 };
                     delaySeconds = duration * (multiplier[unit] || 3600);
                     actionResult.message = `Delayed for ${duration} ${unit}`;
                     break;
+                }
 
-                case 'CONDITION':
+                case 'CONDITION': {
                     const { field, operator, value: targetValue } = currentStep;
                     const leadValue = enrollment.lead[field];
                     let conditionMet = false;
@@ -260,6 +261,7 @@ class WorkflowService {
                     nextStepId = branch && branch.length > 0 ? branch[0].id : nextStepId;
                     actionResult.message = `Condition ${field} ${operator} ${targetValue} evaluated to ${conditionMet}`;
                     break;
+                }
 
                 case 'TAG':
                     if (currentStep.tag) {
@@ -421,7 +423,7 @@ class WorkflowService {
                         stepLog.message = `[SIMULATED] Wait for ${currentStep.duration} ${currentStep.unit}`;
                         break;
 
-                    case 'CONDITION':
+                    case 'CONDITION': {
                         const { field, operator, value: targetValue } = currentStep;
                         const leadValue = testLeadData[field];
                         let conditionMet = false;
@@ -440,6 +442,7 @@ class WorkflowService {
                         const branch = conditionMet ? currentStep.yesSteps : currentStep.noSteps;
                         nextStepId = branch && branch.length > 0 ? branch[0].id : nextStepId;
                         break;
+                    }
 
                     case 'TAG':
                         stepLog.message = `[SIMULATED] ${currentStep.action === 'add' ? 'Add' : 'Remove'} Tag: ${currentStep.tag}`;

@@ -162,7 +162,7 @@ const getPaymentById = async (req, res) => {
 
     // SEC-01 fix: Strict tenant isolation check
     const isOwner = req.user.role === 3;
-    const isTenantAdmin = payment.tenantId === req.user.tenantId;
+    const _isTenantAdmin = payment.tenantId === req.user.tenantId;
 
     if (req.user.role !== 2) {
       if (payment.tenantId !== (req.tenant?.id || req.user?.tenantId)) {
@@ -287,7 +287,7 @@ const getAllPayments = async (req, res) => {
 
     // Build where clause
     const where = {};
-    const bookingWhere = {};
+    const _bookingWhere = {};
 
     if (effectiveTenantId) {
       where.tenantId = effectiveTenantId;
@@ -395,7 +395,7 @@ const getAllPayments = async (req, res) => {
 const processRefund = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, reason } = req.body;
+    const { amount, reason: _reason } = req.body;
 
     // Start transaction for ACID compliance
     const result = await prisma.$transaction(async (tx) => {

@@ -1,5 +1,5 @@
 const { prisma } = require('../config/database');
-const { PropertyStatus, BookingStatus, LeadStatus } = require('../constants');
+const { PropertyStatus, BookingStatus } = require('../constants');
 
 /**
  * PropIntel AI Controller

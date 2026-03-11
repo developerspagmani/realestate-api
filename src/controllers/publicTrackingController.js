@@ -1,5 +1,4 @@
 const { prisma } = require('../config/database');
-const path = require('path');
 
 const trackOpen = async (req, res) => {
     try {

@@ -2,7 +2,6 @@ const { prisma } = require('../config/database');
 const { assignLeadRoundRobin } = require('./agentController');
 const { sendLeadEmail } = require('../utils/emailService');
 const dealPreventionService = require('../services/dealPreventionService');
-const leadNurtureService = require('../services/social/leadNurtureService');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 

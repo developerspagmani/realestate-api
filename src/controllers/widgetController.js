@@ -58,7 +58,7 @@ const widgetController = {
             }
 
             res.json({ success: true, data: widget });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Server error fetching widget.' });
         }
     },
@@ -68,8 +68,6 @@ const widgetController = {
         try {
             const { name, type, configuration, uniqueId, propertyId, tenantId: bodyTenantId } = req.body;
             const isAdmin = req.user.role === 2;
-            const tenantId = bodyTenantId || req.tenant?.id || (isAdmin ? req.user?.tenantId : req.user?.tenantId);
-            // Better: if admin provides a tenantId in body, use it.
             const finalTenantId = (isAdmin && bodyTenantId) ? bodyTenantId : (req.tenant?.id || req.user?.tenantId);
 
             // Ensure uniqueId is actually unique across the platform
@@ -128,7 +126,7 @@ const widgetController = {
             const updatedWidget = await prisma.widget.findUnique({ where: { id } });
 
             res.json({ success: true, data: updatedWidget });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Server error updating widget.' });
         }
     },
@@ -153,7 +151,7 @@ const widgetController = {
             }
 
             res.json({ success: true, message: 'Widget deleted successfully.' });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Server error deleting widget.' });
         }
     },
@@ -265,7 +263,7 @@ const widgetController = {
                 widget,
                 data: properties
             });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Error loading widget.' });
         }
     },

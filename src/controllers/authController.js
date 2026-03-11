@@ -65,7 +65,7 @@ const recordFailedLogin = async (identifier) => {
 const clearLoginAttempts = async (identifier) => {
   try {
     await prisma.loginAttempt.delete({ where: { identifier } });
-  } catch (e) {
+  } catch (_e) {
     // Ignore if already deleted
   }
 };
@@ -106,19 +106,19 @@ const register = async (req, res) => {
 
         // Validation for License Key if provided
         if (licenseKey) {
-          const keyRecord = await tx.licenseKey.findUnique({
+          const _keyRecord = await tx.licenseKey.findUnique({
             where: { key: licenseKey }
           });
 
-          if (!keyRecord || keyRecord.status !== 1) {
+          if (!_keyRecord || _keyRecord.status !== 1) {
             throw new Error('License key is invalid or has already been used');
           }
 
-          if (planId && keyRecord.planId !== planId) {
+          if (planId && _keyRecord.planId !== planId) {
             throw new Error('License key is not valid for the selected plan');
           }
 
-          actualPlanId = keyRecord.planId;
+          actualPlanId = _keyRecord.planId;
         }
 
         // Default to free-starter plan if no plan specified and no license key
@@ -162,7 +162,7 @@ const register = async (req, res) => {
 
         // Mark License Key as used if provided
         if (licenseKey) {
-          const keyRecord = await tx.licenseKey.update({
+          const _keyRecord = await tx.licenseKey.update({
             where: { key: licenseKey },
             data: {
               status: 2, // Used
@@ -463,7 +463,7 @@ const getMe = async (req, res) => {
       }
     });
 
-    const { passwordHash, activationToken, resetPasswordToken, resetPasswordExpires, ...safeUserData } = user;
+    const { passwordHash: _passwordHash, activationToken: _activationToken, resetPasswordToken: _resetPasswordToken, resetPasswordExpires: _resetPasswordExpires, ...safeUserData } = user;
     const userData = {
       ...safeUserData,
       subscriptionStatus: user.tenant?.subscriptionStatus || (user.role === 3 ? 3 : 1),

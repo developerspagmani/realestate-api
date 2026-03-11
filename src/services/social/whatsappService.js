@@ -1,5 +1,5 @@
 const axios = require('axios');
-const crypto = require('crypto');
+const crypto = require('crypto'); // eslint-disable-line no-unused-vars
 const { prisma } = require('../../config/database');
 const aiService = require('./aiService');
 const propertyService = require('./propertyService');
@@ -26,10 +26,10 @@ class WhatsAppService {
      * Generate appsecret_proof for Meta API calls
      * @see https://developers.facebook.com/docs/graph-api/security#appsecret_proof
      */
-    generateAppSecretProof(accessToken) {
+    generateAppSecretProof(_accessToken) {
         // Temporarily disabled for debugging
-        return null;
-
+        return null; // Temporarily disabled for debugging
+        /*
         const appSecret = process.env.META_APP_SECRET;
         const cleanedToken = this.cleanToken(accessToken);
         if (!appSecret || !cleanedToken) return null;
@@ -38,6 +38,7 @@ class WhatsAppService {
             .createHmac('sha256', appSecret)
             .update(cleanedToken)
             .digest('hex');
+        */
     }
 
     /**
@@ -298,7 +299,9 @@ class WhatsAppService {
                 try {
                     const WorkflowService = require('../marketing/WorkflowService');
                     await WorkflowService.triggerWorkflows(tenantId, lead.id, 'LEAD_CREATED');
-                } catch (e) { }
+                } catch (_e) {
+                    // Silently fail if workflow trigger fails
+                }
             }
 
             // 🤖 CONFIGURABLE FUNNEL LOGIC

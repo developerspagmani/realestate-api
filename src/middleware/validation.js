@@ -1,4 +1,3 @@
-const Joi = require('joi');
 const schemas = require('../validations');
 
 const validate = (schema) => {

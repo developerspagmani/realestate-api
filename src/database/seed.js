@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
+const { v4: _uuidv4 } = require('uuid');
 
 const prisma = new PrismaClient({
   accelerateUrl: process.env.DATABASE_URL,
@@ -68,7 +68,7 @@ async function main() {
 
     // Create users
     const hashedPassword = await bcrypt.hash('password123', 12);
-    
+
     const users = await Promise.all([
       prisma.user.create({
         data: {

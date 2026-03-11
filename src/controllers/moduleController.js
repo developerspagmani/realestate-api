@@ -8,7 +8,7 @@ const moduleController = {
                 orderBy: { name: 'asc' }
             });
             res.json({ success: true, data: modules });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Error fetching system modules.' });
         }
     },
@@ -40,7 +40,7 @@ const moduleController = {
             });
 
             res.json({ success: true, data: assignments });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Error fetching tenant modules.' });
         }
     },
@@ -60,7 +60,7 @@ const moduleController = {
             });
 
             res.json({ success: true, data: assignment });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Error updating tenant module entitlement.' });
         }
     },

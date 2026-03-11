@@ -603,7 +603,7 @@ const getAllSpaces = async (req, res) => {
       success: true,
       data: { workspace: units, pagination: { total } }
     });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching units' });
   }
 };
@@ -616,7 +616,7 @@ const createSpace = async (req, res) => {
 // Get system analytics
 const getSystemAnalytics = async (req, res) => {
   try {
-    const { tenantId: queryTenantId, period = 'month', industryType } = req.query;
+    const { tenantId: queryTenantId, industryType } = req.query;
     const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
     const isAdmin = req.user.role === 2;
 
@@ -778,7 +778,7 @@ const getSystemSettings = async (req, res) => {
   try {
     const settings = await prisma.systemSetting.findMany();
     res.status(200).json({ success: true, data: settings });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching settings' });
   }
 };
@@ -793,7 +793,7 @@ const updateSystemSetting = async (req, res) => {
       create: { key, value, type }
     });
     res.status(200).json({ success: true, data: setting });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error updating setting' });
   }
 };

@@ -375,7 +375,7 @@ const updateUnit = async (req, res) => {
         const tenantId = (isAdmin && (bodyTenantId || queryTenantId)) ? (bodyTenantId || queryTenantId) : (req.tenant?.id || req.user?.tenantId);
 
         const updateData = { ...req.body };
-        const pricingData = updateData.unitPricing;
+        const _pricingData = updateData.unitPricing;
         delete updateData.unitPricing;
         delete updateData.id;
         delete updateData.tenantId;
@@ -394,7 +394,7 @@ const updateUnit = async (req, res) => {
         if (updateData.status) updateData.status = parseInt(updateData.status);
 
         // Extract root level individual rates if provided
-        const { hourlyRate, dailyRate, monthlyRate, currency, price, pricingModel, realEstateDetails, unitAmenities } = updateData;
+        const { hourlyRate, dailyRate, monthlyRate, currency, price, pricingModel: _pricingModel, realEstateDetails: _reDetails, unitAmenities: _uAmenities } = updateData;
         delete updateData.hourlyRate;
         delete updateData.dailyRate;
         delete updateData.monthlyRate;

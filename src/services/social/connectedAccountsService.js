@@ -114,7 +114,7 @@ class ConnectedAccountsService {
             };
         } catch (error) {
             console.error('Meta token refresh error:', error.response?.data || error.message);
-            throw new Error('Failed to refresh Meta token');
+            throw new Error('Failed to refresh Meta token', { cause: error });
         }
     }
 
@@ -141,7 +141,7 @@ class ConnectedAccountsService {
             };
         } catch (error) {
             console.error('Google token refresh error:', error.response?.data || error.message);
-            throw new Error('Failed to refresh Google token');
+            throw new Error('Failed to refresh Google token', { cause: error });
         }
     }
 
@@ -235,10 +235,10 @@ class ConnectedAccountsService {
 
             // Handle specific error: code already used
             if (error.response?.data?.error?.code === 100 && error.response?.data?.error?.error_subcode === 36009) {
-                throw new Error('Authorization code has already been used');
+                throw new Error('Authorization code has already been used', { cause: error });
             }
 
-            throw new Error(error.response?.data?.error?.message || 'Failed to connect Meta account');
+            throw new Error(error.response?.data?.error?.message || 'Failed to connect Meta account', { cause: error });
         }
     }
 
@@ -298,7 +298,7 @@ class ConnectedAccountsService {
             return account;
         } catch (error) {
             console.error('Google code exchange error:', error.response?.data || error.message);
-            throw new Error(error.response?.data?.error_description || 'Failed to connect Google account');
+            throw new Error(error.response?.data?.error_description || 'Failed to connect Google account', { cause: error });
         }
     }
 
@@ -342,7 +342,7 @@ class ConnectedAccountsService {
                 });
             } catch (error) {
                 console.error('Sync account data error:', error.response?.data || error.message);
-                throw new Error('Failed to sync account data');
+                throw new Error('Failed to sync account data', { cause: error });
             }
         }
 

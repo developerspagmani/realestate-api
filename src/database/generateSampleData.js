@@ -159,14 +159,14 @@ async function generateSampleData() {
 
     // ─── LICENSE KEYS ─────────────────────────────────────────────────────────
     // Assign one active key to tenantRE
-    const licKeyRE = await prisma.licenseKey.create({
+    const _licKeyRE = await prisma.licenseKey.create({
       data: {
         key: 'ELITE-PRO-2025-XXXX-XXXX',
         planId: proPlan.id, status: 2,
         tenantId: tenantRE.id, activatedAt: new Date()
       }
     });
-    const licKeyCW = await prisma.licenseKey.create({
+    const _licKeyCW = await prisma.licenseKey.create({
       data: {
         key: 'INNOV-GRW-2025-YYYY-YYYY',
         planId: growthPlan.id, status: 2,
@@ -193,7 +193,7 @@ async function generateSampleData() {
 
     // ─── USERS ────────────────────────────────────────────────────────────────
     const hash = await bcrypt.hash('password123', 12);
-    const adminUser = await prisma.user.create({
+    const _adminUser = await prisma.user.create({
       data: {
         name: 'Super Admin', email: 'admin@system.com',
         passwordHash: hash, role: 2,
@@ -257,7 +257,7 @@ async function generateSampleData() {
     const catResidential = await prisma.propertyCategory.create({
       data: { tenantId: tenantRE.id, name: 'Residential', slug: 're-residential', icon: 'bi-house', sortOrder: 1 }
     });
-    const catCommercial = await prisma.propertyCategory.create({
+    const _catCommercial = await prisma.propertyCategory.create({
       data: { tenantId: tenantRE.id, name: 'Commercial', slug: 're-commercial', icon: 'bi-building', sortOrder: 2 }
     });
     const catOffice = await prisma.propertyCategory.create({
@@ -578,7 +578,7 @@ async function generateSampleData() {
       });
       bookings.push(booking);
 
-      const payment = await prisma.payment.create({
+      const _payment = await prisma.payment.create({
         data: {
           tenantId: tenant.id, bookingId: booking.id, userId: user.id,
           amount: totalPrice, currency: isRE ? 'GBP' : 'INR',
@@ -623,7 +623,7 @@ async function generateSampleData() {
     });
 
     // ─── WEBSITES + PAGES ─────────────────────────────────────────────────────
-    const websiteRE = await prisma.website.create({
+    const _websiteRE = await prisma.website.create({
       data: {
         tenantId: tenantRE.id, propertyId: reProps[0].id,
         slug: 'mayfair-gardens', name: 'Mayfair Gardens Official Site',
@@ -694,7 +694,7 @@ async function generateSampleData() {
         totalRecipients: 5, deliveredCount: 5, openedCount: 3, clickedCount: 2
       }
     });
-    const campaign2 = await prisma.campaign.create({
+    const _campaign2 = await prisma.campaign.create({
       data: {
         tenantId: tenantRE.id, name: 'Summer Follow-Up',
         templateId: followUpTpl.id, groupId: audienceGroup2.id, status: 2,
@@ -782,7 +782,7 @@ async function generateSampleData() {
     console.log('📢 Marketing: Templates, Audiences, Campaigns, Workflow, Forms created');
 
     // ─── SOCIAL MEDIA MODULE ──────────────────────────────────────────────────
-    const connectedFB = await prisma.connectedAccount.create({
+    const _connectedFB = await prisma.connectedAccount.create({
       data: {
         tenantId: tenantRE.id, userId: ownerRE.id,
         platform: 'FACEBOOK', accountId: 'fb_104567890123456',
@@ -791,7 +791,7 @@ async function generateSampleData() {
         isActive: true, metadata: { pageId: '104567890123456', category: 'Real Estate' }
       }
     });
-    const connectedIG = await prisma.connectedAccount.create({
+    const _connectedIG = await prisma.connectedAccount.create({
       data: {
         tenantId: tenantRE.id, userId: ownerRE.id,
         platform: 'INSTAGRAM', accountId: 'ig_17841450123456',
@@ -801,7 +801,7 @@ async function generateSampleData() {
       }
     });
 
-    const scheduledPost1 = await prisma.scheduledPost.create({
+    const _scheduledPost1 = await prisma.scheduledPost.create({
       data: {
         tenantId: tenantRE.id, userId: ownerRE.id, propertyId: reProps[0].id,
         title: '🏠 New Mayfair Listing — Limited Units!',

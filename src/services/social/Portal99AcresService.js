@@ -1,5 +1,5 @@
 const { prisma } = require('../../config/database');
-const axios = require('axios');
+// const axios = require('axios');
 const xml2js = require('xml2js');
 
 /**
@@ -97,7 +97,7 @@ class Portal99AcresService {
      * @param {string} username - 99acres username
      * @param {string} password - 99acres password
      */
-    async pollLeads(tenantId, credentials) {
+    async pollLeads(tenantId, _credentials) {
         try {
             // Simulated API call to 99acres
             /*

@@ -1,10 +1,8 @@
 const express = require('express');
-const path = require('path');
 const multer = require('multer');
 const { auth, authorize } = require('../middleware/auth');
 const { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } = require('../constants');
 
-const fs = require('fs');
 
 // SEC-05 fix: Configure multer with file type and size validation
 const storage = multer.memoryStorage();

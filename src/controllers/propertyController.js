@@ -108,8 +108,6 @@ const createProperty = async (req, res) => {
       return property;
     });
 
-    const leadNurtureService = require('../services/social/leadNurtureService');
-
     // Trigger proactive matching in background
     leadNurtureService.findMatchesForNewProperty(result.id).catch(err => {
       console.error('Error triggering matching engine:', err);

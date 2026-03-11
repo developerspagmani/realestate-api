@@ -534,7 +534,7 @@ const getOwnerProperties = async (req, res) => {
     });
 
     res.status(200).json({ success: true, data: { properties } });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching owner properties' });
   }
 };
@@ -555,7 +555,7 @@ const getOwnerUnits = async (req, res) => {
     });
 
     res.status(200).json({ success: true, data: { units } });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching owner units' });
   }
 };
@@ -576,7 +576,7 @@ const getOwnerBookings = async (req, res) => {
     });
 
     res.status(200).json({ success: true, data: { bookings } });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching owner bookings' });
   }
 };
@@ -601,7 +601,7 @@ const getOwnerUsers = async (req, res) => {
     });
 
     res.status(200).json({ success: true, data: { users } });
-  } catch (error) {
+  } catch (_error) {
     res.status(500).json({ success: false, message: 'Error fetching owner users' });
   }
 };

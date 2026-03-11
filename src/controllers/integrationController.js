@@ -82,7 +82,7 @@ const integrationController = {
             });
 
             res.json({ success: true, data: updated });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Failed to update integration.' });
         }
     },
@@ -98,7 +98,7 @@ const integrationController = {
             });
 
             res.json({ success: true, message: 'Integration removed.' });
-        } catch (error) {
+        } catch (_error) {
             res.status(500).json({ success: false, message: 'Failed to delete integration.' });
         }
     },

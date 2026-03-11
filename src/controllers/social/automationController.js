@@ -88,7 +88,7 @@ const automationController = {
                     const triggerObj = typeof wf.trigger === 'string' ? JSON.parse(wf.trigger) : wf.trigger;
                     triggerInfo = triggerObj?.type?.replace('_', ' ') || 'Manual';
                     channelInfo = triggerObj?.channel || 'WhatsApp';
-                } catch (e) { }
+                } catch (_e) { /* ignore parse error */ }
 
                 return {
                     id: wf.id,
@@ -101,9 +101,9 @@ const automationController = {
             }));
 
             res.json({ success: true, data: workflowData });
-        } catch (error) {
-            console.error('[AutomationController] Workflows error:', error);
-            res.status(500).json({ success: false, message: 'Error fetching workflows', details: error.message });
+        } catch (_error) {
+            console.error('[AutomationController] Workflows error:', _error); // Use _error here
+            res.status(500).json({ success: false, message: 'Error fetching workflows', details: _error.message }); // Use _error here
         }
     },
 
@@ -150,9 +150,9 @@ const automationController = {
             });
 
             res.json({ success: true, data: transformedLeads });
-        } catch (error) {
-            console.error('[AutomationController] Waiting leads error:', error);
-            res.status(500).json({ success: false, message: 'Error fetching waiting leads', details: error.message });
+        } catch (_error) {
+            console.error('[AutomationController] Waiting leads error:', _error); // Use _error here
+            res.status(500).json({ success: false, message: 'Error fetching waiting leads', details: _error.message }); // Use _error here
         }
     },
 
@@ -315,8 +315,7 @@ const automationController = {
      */
     forceMatch: async (req, res) => {
         try {
-            const { leadId, tenantId: bodyTenantId } = req.body;
-            const tenantId = bodyTenantId || req.user?.tenantId;
+            const { leadId, tenantId: _bodyTenantId } = req.body;
 
             if (!leadId) return res.status(400).json({ success: false, message: 'Lead ID required' });
 

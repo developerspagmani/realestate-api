@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl"]
 }
 
 datasource db {
@@ -424,12 +425,14 @@ model Lead {
   tenant         Tenant?              @relation(fields: [tenantId], references: [id])
   unit           Unit?                @relation(fields: [unitId], references: [id])
   user           User?                @relation(fields: [userId], references: [id])
+  visitorId      String?              @map("visitor_id")
   enrollments    WorkflowEnrollment[]
   audienceGroups AudienceGroup[]      @relation("LeadAudienceGroups")
   lossData       LeadLossData?
   tasks          Task[]
 
   @@index([tenantId])
+  @@index([visitorId])
   @@index([propertyId])
   @@index([userId])
   @@index([status])
