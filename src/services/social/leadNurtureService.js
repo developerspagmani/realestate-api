@@ -262,8 +262,23 @@ class LeadNurtureService {
 
             // 4. Email Notification (Nurture)
             if (hasEmail) {
-                console.log(`[LeadNurture] Sending property match email to ${lead.email}`);
-                await emailService.sendPropertyRecommendationEmail(lead.email, lead.name, properties);
+                // Respect the Intelligent Email Engine toggle
+                const marketingModule = await prisma.tenantModule.findFirst({
+                    where: { tenantId: lead.tenantId, module: { slug: 'marketing_hub' } }
+                });
+
+                const config = marketingModule?.settings?.intelligentEmail;
+                if (config && config.enabled) {
+                    console.log(`[LeadNurture] Sending property match email to ${lead.email}`);
+                    const currencySymbol = lead.tenant?.settings?.currencySymbol || '$';
+                    await emailService.sendPropertyRecommendationEmail(lead.email, lead.name, properties, {
+                        name: lead.tenant?.name,
+                        customDomain: lead.tenant?.domain,
+                        currencySymbol
+                    });
+                } else {
+                    console.log(`[LeadNurture] Skipping email for lead ${lead.id} - Intelligent Email Engine is disabled.`);
+                }
             }
 
             // 5. Log Interaction

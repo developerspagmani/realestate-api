@@ -170,8 +170,25 @@ const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties, 
             const mainImage = p.mainImage?.url || 'https://via.placeholder.com/600x400?text=Property+Image';
             const propertyLink = `${domain}/properties/${p.slug || p.id}`;
             const symbol = tenantInfo.currencySymbol || '$';
-            const priceRange = p.units?.length > 0
-                ? `${symbol}${Math.min(...p.units.map(u => Number(u.price))).toLocaleString()} - ${symbol}${Math.max(...p.units.map(u => Number(u.price))).toLocaleString()}`
+            
+            // Format price range safely to avoid NaN
+            const prices = (p.units || [])
+                .map(u => {
+                    const directPrice = Number(u.price);
+                    if (!isNaN(directPrice) && directPrice > 0) return directPrice;
+                    
+                    // Fallback to unitPricing relation
+                    const nestedPrice = Number(u.unitPricing?.[0]?.price);
+                    if (!isNaN(nestedPrice) && nestedPrice > 0) return nestedPrice;
+                    
+                    return null;
+                })
+                .filter(pr => pr !== null);
+            
+            const priceRange = prices.length > 0
+                ? (prices.length === 1 
+                    ? `${symbol}${prices[0].toLocaleString()}` 
+                    : `${symbol}${Math.min(...prices).toLocaleString()} - ${symbol}${Math.max(...prices).toLocaleString()}`)
                 : 'Price on Request';
 
             return `
@@ -179,20 +196,20 @@ const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties, 
                 <img src="${mainImage}" alt="${p.title}" style="width: 100%; height: 200px; object-fit: cover;">
                 <div style="padding: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                        <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 700;">${p.title}</h3>
-                        <span style="background-color: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase;">${p.listingType || 'Sale'}</span>
+                        <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 700;">${p.title || 'Exclusive Offering'}</h3>
+                        <span style="background-color: #f1f5f9; color: #4f46e5; padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">${p.listingType || 'Investment'}</span>
                     </div>
                     <p style="margin: 0 0 15px 0; font-size: 14px; color: #64748b; display: flex; align-items: center;">
-                        <span style="margin-right: 5px;">📍</span> ${p.city}${p.state ? `, ${p.state}` : ''}
+                        <span style="margin-right: 5px;">📍</span> ${p.city || 'Prime Location'}${p.state ? `, ${p.state}` : ''}
                     </p>
                     <div style="display: flex; gap: 15px; margin-bottom: 20px;">
-                        <div style="font-size: 13px; color: #475569;"><strong>${p.bedrooms || 0}</strong> Beds</div>
-                        <div style="font-size: 13px; color: #475569;"><strong>${p.bathrooms || 0}</strong> Baths</div>
-                        <div style="font-size: 13px; color: #475569;"><strong>${p.area || 0}</strong> Sqft</div>
+                        <div style="font-size: 13px; color: #475569;"><strong>${p.bedrooms || '--'}</strong> Beds</div>
+                        <div style="font-size: 13px; color: #475569;"><strong>${p.bathrooms || '--'}</strong> Baths</div>
+                        <div style="font-size: 13px; color: #475569;"><strong>${(p.area || 0).toLocaleString()}</strong> Sqft</div>
                     </div>
                     <div style="border-top: 1px solid #f1f5f9; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
                         <div style="color: #4f46e5; font-size: 18px; font-weight: 800;">${priceRange}</div>
-                        <a href="${propertyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">View Details</a>
+                        <a href="${propertyLink}" style="background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">View Intelligence</a>
                     </div>
                 </div>
             </div>

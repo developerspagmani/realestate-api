@@ -95,13 +95,22 @@ const testIntelligentEmail = async (req, res) => {
 
         const IntelligentEmailService = require('../services/marketing/IntelligentEmailService');
 
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { name: true, domain: true, settings: true }
+        });
+
         // Custom generation for test
         const config = { budgetVariance: 15 }; // Use default for test
+        const currencySymbol = tenant.settings?.currencySymbol || '$';
 
         // Mock a lead object for property service
         const mockLead = { id: 'test-lead', budget: Number(budget), email, name: 'Test User' };
 
-        await IntelligentEmailService.generateAndSend(mockLead, tenantId, config);
+        await IntelligentEmailService.generateAndSend(mockLead, tenantId, { 
+            ...config, 
+            tenantInfo: { name: tenant.name, customDomain: tenant.domain, currencySymbol } 
+        });
 
         res.status(200).json({ success: true, message: 'Test email sent successfully' });
     } catch (error) {
