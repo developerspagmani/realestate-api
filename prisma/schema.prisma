@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl"]
 }
 
@@ -40,8 +40,8 @@ model Tenant {
   formBuilders          FormBuilder[]
   integrations          Integration[]
   leadInteractions      LeadInteraction[]
-  leads                 Lead[]
   lostLeads             LeadLossData[]
+  leads                 Lead[]
   licenseKey            LicenseKey?
   listings              Listing[]
   marketingWorkflows    MarketingWorkflow[]
@@ -49,10 +49,12 @@ model Tenant {
   pages                 Page[]
   payments              Payment[]
   upgradeRequests       PlanUpgradeRequest[]
+  portalListings        PortalListing[]
   properties            Property[]
   propertyCategories    PropertyCategory[]
   publishedPosts        PublishedPost[]
   scheduledPosts        ScheduledPost[]
+  tasks                 Task[]
   tenantModules         TenantModule[]
   plan                  Plan?                @relation(fields: [planId], references: [id])
   units                 Unit[]
@@ -60,13 +62,12 @@ model Tenant {
   users                 User[]
   websites              Website[]
   whatsappCampaigns     WhatsAppCampaign[]
+  whatsappChatbot       WhatsAppChatbot?
   whatsappMessages      WhatsAppMessage[]
   whatsappTemplates     WhatsAppTemplate[]
-  whatsappChatbot       WhatsAppChatbot?
-  portalListings        PortalListing[]
   widgets               Widget[]
   workflowLogs          WorkflowLog[]
-  tasks                 Task[]
+  popups                WebsitePopup[]
 
   @@map("tenants")
 }
@@ -154,10 +155,10 @@ model User {
   planUpgradeRequests  PlanUpgradeRequest[]
   publishedPosts       PublishedPost[]
   scheduledPosts       ScheduledPost[]
+  createdTasks         Task[]
   userPropertyAccess   UserPropertyAccess[]
   tenant               Tenant?              @relation(fields: [tenantId], references: [id])
   whatsappCampaigns    WhatsAppCampaign[]
-  createdTasks         Task[]
 
   @@index([tenantId])
   @@index([phone])
@@ -201,6 +202,7 @@ model Property {
   agentProperties    AgentProperty[]
   bookings           Booking[]
   leads              Lead[]
+  portalListings     PortalListing[]
   brochure           Media?               @relation("PropertyBrochure", fields: [brochureId], references: [id])
   category           PropertyCategory?    @relation(fields: [categoryId], references: [id])
   floorPlan          Media?               @relation("PropertyFloorPlan", fields: [floorPlanId], references: [id])
@@ -212,7 +214,6 @@ model Property {
   units              Unit[]
   userPropertyAccess UserPropertyAccess[]
   websites           Website[]
-  portalListings     PortalListing[]
   widgets            Widget[]
 
   @@index([tenantId])
@@ -392,44 +393,44 @@ model Listing {
 }
 
 model Lead {
-  id             String               @id @default(uuid()) @db.Uuid
-  tenantId       String?              @map("tenant_id") @db.Uuid
-  unitId         String?              @map("unit_id") @db.Uuid
-  propertyId     String?              @map("property_id") @db.Uuid
-  name           String?
-  email          String?
-  phone          String?
-  message        String?
-  source         Int?
-  createdAt      DateTime             @default(now()) @map("created_at")
-  budget         Decimal?             @db.Decimal(15, 2)
-  company        String?
-  notes          String?
-  preferredDate  DateTime?            @map("preferred_date")
-  priority       Int                  @default(2)
-  status         Int                  @default(1)
-  tags           String?
-  updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at")
-  userId         String?              @map("user_id") @db.Uuid
-  assignedAt     DateTime?            @map("assigned_at")
-  leadScore      Int                  @default(0) @map("lead_score")
-  riskScore      Int                  @default(0) @map("risk_score")
-  riskSignals    Json?                @default("[]") @map("risk_signals")
-  authenticityScore Int               @default(0) @map("authenticity_score")
-  lastActivityAt DateTime?            @default(now()) @map("last_activity_at")
-  preferences    Json?                @default("{}")
-  agentLeads     AgentLead[]
-  bookings       Booking[]
-  interactions   LeadInteraction[]
-  property       Property?            @relation(fields: [propertyId], references: [id])
-  tenant         Tenant?              @relation(fields: [tenantId], references: [id])
-  unit           Unit?                @relation(fields: [unitId], references: [id])
-  user           User?                @relation(fields: [userId], references: [id])
-  visitorId      String?              @map("visitor_id")
-  enrollments    WorkflowEnrollment[]
-  audienceGroups AudienceGroup[]      @relation("LeadAudienceGroups")
-  lossData       LeadLossData?
-  tasks          Task[]
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String?              @map("tenant_id") @db.Uuid
+  unitId            String?              @map("unit_id") @db.Uuid
+  propertyId        String?              @map("property_id") @db.Uuid
+  name              String?
+  email             String?
+  phone             String?
+  message           String?
+  source            Int?
+  createdAt         DateTime             @default(now()) @map("created_at")
+  budget            Decimal?             @db.Decimal(15, 2)
+  company           String?
+  notes             String?
+  preferredDate     DateTime?            @map("preferred_date")
+  priority          Int                  @default(2)
+  status            Int                  @default(1)
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at")
+  userId            String?              @map("user_id") @db.Uuid
+  assignedAt        DateTime?            @map("assigned_at")
+  leadScore         Int                  @default(0) @map("lead_score")
+  preferences       Json?                @default("{}")
+  tags              String?
+  authenticityScore Int                  @default(0) @map("authenticity_score")
+  lastActivityAt    DateTime?            @default(now()) @map("last_activity_at")
+  riskScore         Int                  @default(0) @map("risk_score")
+  riskSignals       Json?                @default("[]") @map("risk_signals")
+  visitorId         String?              @map("visitor_id")
+  agentLeads        AgentLead[]
+  bookings          Booking[]
+  interactions      LeadInteraction[]
+  lossData          LeadLossData?
+  property          Property?            @relation(fields: [propertyId], references: [id])
+  tenant            Tenant?              @relation(fields: [tenantId], references: [id])
+  unit              Unit?                @relation(fields: [unitId], references: [id])
+  user              User?                @relation(fields: [userId], references: [id])
+  tasks             Task[]
+  enrollments       WorkflowEnrollment[]
+  audienceGroups    AudienceGroup[]      @relation("LeadAudienceGroups")
 
   @@index([tenantId])
   @@index([visitorId])
@@ -442,21 +443,20 @@ model Lead {
 }
 
 model LeadLossData {
-  id              String   @id @default(uuid()) @db.Uuid
-  leadId          String   @unique @map("lead_id") @db.Uuid
-  tenantId        String   @map("tenant_id") @db.Uuid
-  primaryReason   String   @map("primary_reason")
-  secondaryReason String?  @map("secondary_reason")
-  stageAtLoss     String   @map("stage_at_loss") // "Enquiry", "Site Visit", "Negotiation", "Booking"
-  lostImpactScore Decimal  @default(0) @map("lost_impact_score") @db.Decimal(15, 2)
-  competitorName  String?  @map("competitor_name")
+  id              String    @id @default(uuid()) @db.Uuid
+  leadId          String    @unique @map("lead_id") @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  primaryReason   String    @map("primary_reason")
+  secondaryReason String?   @map("secondary_reason")
+  stageAtLoss     String    @map("stage_at_loss")
+  lostImpactScore Decimal   @default(0) @map("lost_impact_score") @db.Decimal(15, 2)
+  competitorName  String?   @map("competitor_name")
   notes           String?
-  revivalStatus   Int      @default(1) @map("revival_status") // 1: None, 2: Queued, 3: Active, 4: Revived
+  createdAt       DateTime  @default(now()) @map("created_at")
   revivalDate     DateTime? @map("revival_date")
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  lead            Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  revivalStatus   Int       @default(1) @map("revival_status")
+  lead            Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("lead_loss_data")
@@ -640,14 +640,15 @@ model Website {
   customDomain  String?   @unique @map("custom_domain")
   tenantId      String?   @map("tenant_id") @db.Uuid
   propertyId    String?   @map("property_id") @db.Uuid
-  propertyIds   String[]  @default([]) @map("property_ids")
   name          String
   configuration Json
   status        Int       @default(1)
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
+  propertyIds   String[]  @default([]) @map("property_ids")
   property      Property? @relation(fields: [propertyId], references: [id])
   tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+  popups        WebsitePopup[]
 
   @@index([tenantId])
   @@index([propertyId])
@@ -971,12 +972,12 @@ model ScheduledPost {
   mediaUrls        String[]         @map("media_urls")
   imageData        Json?            @map("image_data")
   videoData        Json?            @map("video_data")
-  campaignGoal     String?          @map("campaign_goal")
-  targetAudience   String?          @map("target_audience")
   executionResults Json?            @map("execution_results")
   lastPostedAt     DateTime?        @map("last_posted_at")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
+  campaignGoal     String?          @map("campaign_goal")
+  targetAudience   String?          @map("target_audience")
   publishedPosts   PublishedPost[]
   property         Property?        @relation(fields: [propertyId], references: [id])
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1083,6 +1084,68 @@ model WhatsAppMessage {
   @@map("whatsapp_messages")
 }
 
+model WhatsAppChatbot {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @unique @map("tenant_id") @db.Uuid
+  isActive         Boolean  @default(true) @map("is_active")
+  steps            Json     @default("[]")
+  startStepId      String?  @map("start_step_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  crossSellEnabled Boolean  @default(true) @map("cross_sell_enabled")
+  upsellEnabled    Boolean  @default(true) @map("upsell_enabled")
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("whatsapp_chatbots")
+}
+
+model PortalListing {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  propertyId   String   @map("property_id") @db.Uuid
+  portal       String
+  externalId   String?  @map("external_id")
+  status       String   @default("PENDING")
+  syncStatus   String?  @map("sync_status")
+  url          String?
+  errorMessage String?  @map("error_message")
+  metadata     Json?    @default("{}")
+  lastSyncAt   DateTime @default(now()) @map("last_sync_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("portal_listings")
+}
+
+model Task {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  title       String
+  description String?
+  priority    Int       @default(2)
+  status      Int       @default(1)
+  dueDate     DateTime? @map("due_date")
+  assignedTo  String?   @map("assigned_to") @db.Uuid
+  createdBy   String?   @map("created_by") @db.Uuid
+  leadId      String?   @map("lead_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  agent       Agent?    @relation(fields: [assignedTo], references: [id])
+  creator     User?     @relation(fields: [createdBy], references: [id])
+  lead        Lead?     @relation(fields: [leadId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([assignedTo])
+  @@index([leadId])
+  @@map("tasks")
+}
+
 enum SocialPlatform {
   FACEBOOK
   INSTAGRAM
@@ -1102,67 +1165,23 @@ enum PostStatus {
   CANCELLED
 }
 
-model WhatsAppChatbot {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @unique @map("tenant_id") @db.Uuid
-  isActive         Boolean  @default(true) @map("is_active")
-  upsellEnabled    Boolean  @default(true) @map("upsell_enabled")
-  crossSellEnabled Boolean  @default(true) @map("cross_sell_enabled")
-  steps            Json     @default("[]") // [{ id, type, content, buttons: [{ label, nextStepId, valueToSave, fieldToSave }] }]
-  startStepId      String?  @map("start_step_id")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+model WebsitePopup {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  websiteId       String   @map("website_id") @db.Uuid
+  name            String
+  type            String   // modal, banner, slide_in
+  trigger         String   // on_load, exit_intent, scroll, delay
+  triggerValue    String?  @map("trigger_value")
+  content         Json
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  website         Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
-  @@map("whatsapp_chatbots")
+  @@index([websiteId])
+  @@map("website_popups")
 }
-
-model PortalListing {
-  id           String    @id @default(uuid()) @db.Uuid
-  tenantId     String    @map("tenant_id") @db.Uuid
-  propertyId   String    @map("property_id") @db.Uuid
-  portal       String    // e.g., "99ACRES", "MAGICBRICKS"
-  externalId   String?   @map("external_id")
-  status       String    @default("PENDING") // PENDING, PUBLISHED, FAILED, EXPIRED
-  syncStatus   String?   @map("sync_status")
-  url          String?   // Direct link to the listing on the portal
-  errorMessage String?   @map("error_message")
-  metadata     Json?     @default("{}")
-  lastSyncAt   DateTime  @default(now()) @map("last_sync_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([propertyId])
-  @@map("portal_listings")
-}
-
-model Task {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  title       String
-  description String?
-  priority    Int       @default(2) // 1: Low, 2: Medium, 3: High
-  status      Int       @default(1) // 1: Pending, 2: In Progress, 3: Completed, 4: Cancelled
-  dueDate     DateTime? @map("due_date")
-  assignedTo  String?   @map("assigned_to") @db.Uuid // Agent ID
-  createdBy   String?   @map("created_by") @db.Uuid // Admin/Owner User ID
-  leadId      String?   @map("lead_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  agent       Agent?    @relation(fields: [assignedTo], references: [id])
-  lead        Lead?     @relation(fields: [leadId], references: [id])
-  creator     User?     @relation(fields: [createdBy], references: [id])
-
-  @@index([tenantId])
-  @@index([assignedTo])
-  @@index([leadId])
-  @@map("tasks")
-}
-

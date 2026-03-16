@@ -11,7 +11,10 @@ const SCORING_RULES = {
     'CHAT_CHOICE': 5,
     'BOOKING_REQUEST': 30,
     'UNIT_BOOKING_START': 5,
-    'WEBSITE_INQUIRY': 20
+    'WEBSITE_INQUIRY': 20,
+    'POPUP_VIEW': 2,
+    'POPUP_CLICK': 10,
+    'POPUP_SUBMIT': 30
 };
 
 /**

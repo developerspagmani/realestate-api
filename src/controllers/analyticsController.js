@@ -234,6 +234,48 @@ const analyticsController = {
                     where: interactionWhere,
                     select: { type: true, metadata: true }
                 });
+                
+                // POPUP PERFORMANCE TRACKING
+                const popupMetrics = {
+                    totalImpressions: 0,
+                    totalClicks: 0,
+                    totalSubmissions: 0,
+                    byPopup: {}
+                };
+
+                const popupInteractions = await prisma.leadInteraction.findMany({
+                    where: {
+                        tenantId,
+                        type: { in: ['POPUP_VIEW', 'POPUP_CLICK', 'POPUP_SUBMIT'] },
+                        ...(Object.keys(dateFilter).length > 0 ? { occurredAt: dateFilter } : {})
+                    },
+                    select: { type: true, metadata: true }
+                });
+
+                popupInteractions.forEach(pi => {
+                    const pid = pi.metadata?.popupId || 'unknown';
+                    const pname = pi.metadata?.popupName || 'Unnamed Popup';
+                    if (!popupMetrics.byPopup[pid]) {
+                        popupMetrics.byPopup[pid] = { name: pname, views: 0, clicks: 0, submissions: 0 };
+                    }
+
+                    if (pi.type === 'POPUP_VIEW') {
+                        popupMetrics.totalImpressions++;
+                        popupMetrics.byPopup[pid].views++;
+                    } else if (pi.type === 'POPUP_CLICK') {
+                        popupMetrics.totalClicks++;
+                        popupMetrics.byPopup[pid].clicks++;
+                    } else if (pi.type === 'POPUP_SUBMIT') {
+                        popupMetrics.totalSubmissions++;
+                        popupMetrics.byPopup[pid].submissions++;
+                    }
+                });
+
+                req.popupPerformance = {
+                    ...popupMetrics,
+                    conversionRate: popupMetrics.totalImpressions > 0 ? (popupMetrics.totalSubmissions / popupMetrics.totalImpressions * 100).toFixed(1) : 0,
+                    topPopups: Object.values(popupMetrics.byPopup).sort((a, b) => b.submissions - a.submissions).slice(0, 5)
+                };
 
                 // Pre-fetch property cities for mapping
                 const propertyCities = {};
@@ -405,7 +447,7 @@ const analyticsController = {
                     where: { 
                         tenantId, 
                         occurredAt: { gte: thirtyMinsAgo },
-                        type: { in: ['PROPERTY_VIEW', 'CHAT_INIT', 'FORM_SUBMIT'] }
+                        type: { in: ['PROPERTY_VIEW', 'CHAT_INIT', 'FORM_SUBMIT', 'POPUP_SUBMIT', 'POPUP_CLICK'] }
                     },
                     take: 15,
                     orderBy: { occurredAt: 'desc' },
@@ -483,7 +525,8 @@ const analyticsController = {
                         totalIdentifiedVisitors,
                         totalUniqueVisitors,
                         stitchingRate: totalIdentifiedVisitors > 0 ? ((totalIdentifiedVisitors - totalUniqueVisitors) / totalIdentifiedVisitors * 100).toFixed(1) : 0
-                    }
+                    },
+                    popups: req.popupPerformance || { totalImpressions: 0, totalClicks: 0, totalSubmissions: 0, conversionRate: 0, topPopups: [] }
                 }
             });
         } catch (error) {

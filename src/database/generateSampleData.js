@@ -656,7 +656,7 @@ async function generateSampleData() {
     // ─── MARKETING MODULE ─────────────────────────────────────────────────────
     const emailTpl = await prisma.emailTemplate.create({
       data: {
-        tenantId: tenantRE.id, name: 'New Property Alert', subject: '🏠 New Listing: {{propertyName}}',
+        tenantId: tenantRE.id, name: 'New Property Alert', subject: '🏠 New Listing Available',
         content: '<h2>New Property Available</h2><p>Dear {{name}}, we have a new property matching your criteria.</p>',
         type: 'email', isDefault: true
       }
@@ -664,7 +664,7 @@ async function generateSampleData() {
     const followUpTpl = await prisma.emailTemplate.create({
       data: {
         tenantId: tenantRE.id, name: 'Follow-Up Template', subject: 'Following up on your enquiry',
-        content: '<p>Hi {{name}}, just checking in regarding your interest in {{propertyName}}.</p>',
+        content: '<p>Hi {{name}}, just checking in regarding your interest in our latest listing.</p>',
         type: 'email'
       }
     });
