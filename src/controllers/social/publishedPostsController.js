@@ -360,6 +360,79 @@ const refreshPostMetrics = async (req, res) => {
     }
 };
 
+/**
+ * Get detailed engagement for a published post (real-time from platform)
+ * @route GET /api/social/posts/published/:id/engagement
+ */
+const getPostEngagementDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+
+        const post = await prisma.publishedPost.findFirst({
+            where: { id, userId, tenantId }
+        });
+
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                message: 'Published post not found'
+            });
+        }
+
+        const account = await prisma.connectedAccount.findFirst({
+            where: {
+                userId,
+                tenantId,
+                platform: post.platform,
+                isActive: true
+            }
+        });
+
+        if (!account) {
+            return res.status(400).json({
+                success: false,
+                message: `No active ${post.platform} account found to fetch engagement`
+            });
+        }
+
+        let engagement = { 
+            summary: post.metrics || { likes: 0, comments: 0, shares: 0, reach: 0 }, 
+            comments: [] 
+        };
+
+        if (post.platform === 'FACEBOOK') {
+            engagement = await scheduledPostsService.getFacebookDetailedEngagement(post.platformPostId, account);
+            
+            // Optionally update metrics in background
+            prisma.publishedPost.update({
+                where: { id },
+                data: { metrics: engagement.summary }
+            }).catch(e => console.error('Failed to update Facebook metrics in background:', e));
+        } else if (post.platform === 'INSTAGRAM') {
+            engagement = await scheduledPostsService.getInstagramDetailedEngagement(post.platformPostId, account);
+
+            // Optionally update metrics in background
+            prisma.publishedPost.update({
+                where: { id },
+                data: { metrics: engagement.summary }
+            }).catch(e => console.error('Failed to update Instagram metrics in background:', e));
+        }
+
+        res.status(200).json({
+            success: true,
+            data: engagement
+        });
+    } catch (error) {
+        console.error('Get post engagement details error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Server error fetching engagement details'
+        });
+    }
+};
+
 module.exports = {
     getPublishedPosts,
     getPublishedPostById,
@@ -367,5 +440,6 @@ module.exports = {
     refreshPostMetrics,
     getPublishedStats,
     deletePublishedPost,
-    getPublishedPostsByProperty
+    getPublishedPostsByProperty,
+    getPostEngagementDetails
 };

@@ -29,21 +29,36 @@ class ConnectedAccountsService {
             isActive: true
         };
 
+        let account;
         if (existingAccount) {
             // Update existing account
-            return await prisma.connectedAccount.update({
+            account = await prisma.connectedAccount.update({
                 where: { id: existingAccount.id },
                 data: {
                     ...accountData,
                     updatedAt: new Date()
                 }
             });
+        } else {
+            // Create new account
+            account = await prisma.connectedAccount.create({
+                data: accountData
+            });
         }
 
-        // Create new account
-        return await prisma.connectedAccount.create({
-            data: accountData
-        });
+        // If it's Facebook and we don't have pages in metadata, sync it now
+        // This handles both OAuth redirect and SDK popup flows
+        if (platform === 'FACEBOOK' && (!account.metadata || !account.metadata.pages || account.metadata.pages.length === 0)) {
+            try {
+                console.log(`🔄 Triggering initial sync for Facebook account: ${account.id}`);
+                account = await this.syncAccountData(account.id, userId, tenantId);
+            } catch (err) {
+                console.error('Initial Facebook sync failed:', err.message);
+                // We still return the account even if sync fails, but it won't have pages yet
+            }
+        }
+
+        return account;
     }
 
     /**

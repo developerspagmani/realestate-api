@@ -82,6 +82,7 @@ const allowedOrigins = [
   "https://unsolemnised-renda-feirie.ngrok-free.dev",
   "https://realestate-admin-virpanix.vercel.app",
   "https://realestate-admin-vert.vercel.app",
+  'https://unsolemnised-renda-feirie.ngrok-free.dev'
 ].filter(Boolean);
 
 app.use(cors({

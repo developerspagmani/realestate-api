@@ -20,6 +20,9 @@ router.put('/:id/metrics', publishedPostsController.updateMetrics);
 // Refresh post metrics from platform
 router.post('/:id/refresh', publishedPostsController.refreshPostMetrics);
 
+// Get detailed engagement (real-time comments etc)
+router.get('/:id/engagement', publishedPostsController.getPostEngagementDetails);
+
 // Delete published post record
 router.delete('/:id', publishedPostsController.deletePublishedPost);
 

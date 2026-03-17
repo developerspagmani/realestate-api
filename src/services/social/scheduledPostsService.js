@@ -112,10 +112,24 @@ class ScheduledPostsService {
      */
     async publishToFacebook(post, account) {
         const metadata = account.metadata || {};
-        const pages = metadata.pages || [];
+        let pages = metadata.pages || [];
+
+        // RESILIENCE BOOSTER: If no pages found in metadata, try to sync now
+        // This is a self-healing mechanism for accounts connected without full page data
+        if (pages.length === 0) {
+            console.log(`⚠️ No pages found in metadata for account ${account.id}. Attempting on-the-fly sync...`);
+            try {
+                const refreshedAccount = await this.syncAccountData(account.id, account.userId, account.tenantId);
+                pages = refreshedAccount.metadata?.pages || [];
+                console.log(`✅ On-the-fly sync successful. Found ${pages.length} pages.`);
+            } catch (syncErr) {
+                console.error(`❌ On-the-fly sync failed: ${syncErr.message}`);
+                // We'll continue and throw the error below if pages is still empty
+            }
+        }
 
         if (pages.length === 0) {
-            throw new Error('No Facebook pages found');
+            throw new Error('No Facebook pages found. Please ensure you have granted page management permissions and try reconnecting your Facebook account.');
         }
 
         // Use the first page
@@ -239,14 +253,27 @@ class ScheduledPostsService {
      * Publish to Instagram
      */
     async publishToInstagram(post, account) {
-        const metadata = account.metadata || {};
-        const pages = metadata.pages || [];
+        let metadata = account.metadata || {};
+        let pages = metadata.pages || [];
 
         // Find a page with Instagram Business Account
-        const pageWithIG = pages.find(p => p.instagram_business_account);
+        let pageWithIG = pages.find(p => p.instagram_business_account);
+
+        // RESILIENCE BOOSTER: If no IG account found, try to sync now
+        if (!pageWithIG) {
+            console.log(`⚠️ No Instagram account found in metadata for account ${account.id}. Attempting on-the-fly sync...`);
+            try {
+                const refreshedAccount = await this.syncAccountData(account.id, account.userId, account.tenantId);
+                pages = refreshedAccount.metadata?.pages || [];
+                pageWithIG = pages.find(p => p.instagram_business_account);
+                console.log(pageWithIG ? `✅ On-the-fly sync found Instagram account.` : `❌ Sync successful but no Instagram account linked.`);
+            } catch (syncErr) {
+                console.error(`❌ On-the-fly sync failed: ${syncErr.message}`);
+            }
+        }
 
         if (!pageWithIG) {
-            throw new Error('No Instagram Business Account found');
+            throw new Error('No Instagram Business Account found. Ensure your Instagram account is linked to a Facebook Page and converted to a Professional/Business account.');
         }
 
         const igAccountId = pageWithIG.instagram_business_account.id;
@@ -404,29 +431,35 @@ class ScheduledPostsService {
             const page = pages[0];
             const pageAccessToken = page.access_token;
 
-            const response = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                params: {
-                    fields: 'insights.metric(post_impressions_unique,post_engaged_users,post_reactions_by_type_total,post_comments_count,post_shares_count)',
-                    access_token: pageAccessToken
+            // Define a more resilient fetch strategy
+            const fetchField = async (fields) => {
+                try {
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields, access_token: pageAccessToken }
+                    });
+                    return res.data;
+                } catch (e) {
+                    const errMsg = e.response?.data?.error?.message || e.message;
+                    console.warn(`📊 FB field fetch failed (${fields}) for ${platformPostId}: ${errMsg}`);
+                    return null;
                 }
-            });
+            };
 
-            // If the above fails or returns nothing, try a simpler field set
-            const simpleResponse = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                params: {
-                    fields: 'likes.summary(true),comments.summary(true),shares',
-                    access_token: pageAccessToken
-                }
-            });
+            // Try to get insights first
+            const insightsRes = await fetchField('insights.metric(post_impressions_unique,post_engaged_users,post_reactions_by_type_total,post_comments_count,post_shares_count)');
 
-            const likes = simpleResponse.data.likes?.summary?.total_count || 0;
-            const comments = simpleResponse.data.comments?.summary?.total_count || 0;
-            const shares = simpleResponse.data.shares?.count || 0;
+            // Get simple metrics and shares separately
+            const basicsRes = await fetchField('likes.summary(true),comments.summary(true)');
+            const sharesRes = await fetchField('shares');
 
-            // Try to get reach from insights if possible
+            const likes = basicsRes?.likes?.summary?.total_count || 0;
+            const comments = basicsRes?.comments?.summary?.total_count || 0;
+            const shares = sharesRes?.shares?.count || 0;
+
+            // Try to get reach from insights
             let reach = 0;
-            if (response.data.insights) {
-                const reachData = response.data.insights.data.find(i => i.name === 'post_impressions_unique');
+            if (insightsRes?.insights) {
+                const reachData = insightsRes.insights.data.find(i => i.name === 'post_impressions_unique');
                 reach = reachData?.values[0]?.value || 0;
             }
 
@@ -443,8 +476,227 @@ class ScheduledPostsService {
     }
 
     /**
-     * Get metrics for an Instagram post
+     * Get detailed engagement for a Facebook post including comments and commenter details
      */
+    async getFacebookDetailedEngagement(platformPostId, account) {
+        try {
+            const metadata = account.metadata || {};
+            const pages = metadata.pages || [];
+
+            const tokens = [
+                ...pages.map(p => ({ token: p.access_token, name: p.name, id: p.id })),
+                { token: account.accessToken, name: 'Main Account Token', id: 'user' }
+            ];
+
+            let workingToken = null;
+            let commentToken = null;
+
+            console.log(`🔍 Searching for a working token to access post ${platformPostId}...`);
+            for (const t of tokens) {
+                try {
+                    const check = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields: 'id', access_token: t.token }
+                    });
+                    if (check.data.id) {
+                        workingToken = t.token;
+                        console.log(`✅ Found working token: ${t.name}`);
+
+                        try {
+                            const commCheck = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
+                                params: { fields: 'id,from', limit: 1, access_token: t.token }
+                            });
+                            if (commCheck.data) {
+                                commentToken = t.token;
+                                console.log(`💎 Token ${t.name} has COMMENT & FROM permissions.`);
+                            }
+                        } catch (e) { /* quiet fallback */ }
+
+                        if (!commentToken) commentToken = t.token;
+                        break;
+                    }
+                } catch (e) { /* continue */ }
+            }
+
+            if (!workingToken && !platformPostId.includes('_') && pages.length > 0) {
+                for (const p of pages) {
+                    const prefixedId = `${p.id}_${platformPostId}`;
+                    try {
+                        const check = await axios.get(`https://graph.facebook.com/v18.0/${prefixedId}`, {
+                            params: { fields: 'id', access_token: p.access_token }
+                        });
+                        if (check.data.id) {
+                            platformPostId = prefixedId;
+                            workingToken = p.access_token;
+                            commentToken = p.access_token;
+                            break;
+                        }
+                    } catch (e) { /* continue */ }
+                }
+            }
+
+            if (!workingToken) {
+                return { summary: { likes: 0, comments: 0, shares: 0, reach: 0 }, comments: [] };
+            }
+
+            const fetchSafe = async (fields, overrideToken = null) => {
+                try {
+                    const response = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields, access_token: overrideToken || workingToken }
+                    });
+                    return response.data;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const likesRes = await fetchSafe('likes.summary(true).limit(0)');
+            const commentsSummaryRes = await fetchSafe('comments.summary(true).limit(0)');
+            const sharesRes = await fetchSafe('shares');
+            const engagementRes = await fetchSafe('engagement');
+
+            // Step 4: Fetch comments separately using the best available 'commentToken'
+            let comments = [];
+            const commentFields = 'id,message,created_time,from{id,name,picture{url}}';
+            const basicCommentFields = 'id,message,created_time,from{id,name}';
+            const safeCommentFields = 'id,message,created_time';
+
+            const tryFetchComments = async () => {
+                const token = commentToken || workingToken;
+                // Try 1: Direct Edge with all details
+                try {
+                    console.log('🔄 Trying direct /comments edge with full details...');
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
+                        params: { fields: commentFields, limit: 100, access_token: token }
+                    });
+                    if (res.data?.data) return res.data;
+                } catch (e) { /* next */ }
+
+                // Try 2: Direct Edge with just name/id
+                try {
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
+                        params: { fields: basicCommentFields, limit: 100, access_token: token }
+                    });
+                    if (res.data?.data) return res.data;
+                } catch (e) { /* next */ }
+
+                // Try 3: Direct Edge with no user info
+                try {
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
+                        params: { fields: safeCommentFields, limit: 100, access_token: token }
+                    });
+                    if (res.data?.data) return res.data;
+                } catch (e) { /* next */ }
+
+                // Try 4: Fallback to Post Node traversal (our previous method)
+                console.log('🔄 All direct edges failed. Falling back to post node field traversal...');
+                let fallback = await fetchSafe(`comments.limit(100){${commentFields}}`, token);
+                if (!fallback) fallback = await fetchSafe(`comments.limit(100){${basicCommentFields}}`, token);
+                if (!fallback) fallback = await fetchSafe(`comments.limit(100){${safeCommentFields}}`, token);
+                if (!fallback) fallback = await fetchSafe('comments', token);
+
+                return fallback;
+            };
+
+            const commentsData = await tryFetchComments();
+
+            if (commentsData?.comments?.data || commentsData?.data) {
+                const rawComments = commentsData.comments?.data || commentsData.data || [];
+                console.log(`💬 Successfully retrieved ${rawComments.length} comments for ${platformPostId}`);
+                comments = rawComments.map(c => ({
+                    id: c.id,
+                    message: c.message || '[Content Hidden/Restricted]',
+                    createdAt: c.created_time || new Date().toISOString(),
+                    user: c.from ? {
+                        id: c.from.id,
+                        name: c.from.name,
+                        picture: c.from.picture?.data?.url
+                    } : { name: 'Facebook User', id: 'unknown' }
+                }));
+            } else {
+                console.log(`💬 All comment fetch attempts failed or returned empty for ${platformPostId}.`, commentsData);
+            }
+
+            let reachCount = 0;
+            const insights = await fetchSafe('insights.metric(post_impressions_unique)');
+            if (insights?.insights?.data?.[0]?.values?.[0]?.value) {
+                reachCount = insights.insights.data[0].values[0].value;
+            }
+
+            const likesCount = likesRes?.likes?.summary?.total_count || engagementRes?.engagement?.like_count || 0;
+            const commentsCount = commentsSummaryRes?.comments?.summary?.total_count || engagementRes?.engagement?.comment_count || comments.length;
+            const sharesCount = sharesRes?.shares?.count || engagementRes?.engagement?.share_count || 0;
+
+            return {
+                summary: { likes: likesCount, comments: commentsCount, shares: sharesCount, reach: reachCount },
+                comments
+            };
+        } catch (error) {
+            console.error('Critical error in getFacebookDetailedEngagement:', error.message);
+            return { summary: { likes: 0, comments: 0, shares: 0, reach: 0 }, comments: [] };
+        }
+    }
+
+    async getInstagramDetailedEngagement(platformPostId, account) {
+        try {
+            const metadata = account.metadata || {};
+            const pages = metadata.pages || [];
+            const pageWithIG = pages.find(p => p.instagram_business_account);
+            if (!pageWithIG) throw new Error('No Instagram Business Account found');
+
+            const pageAccessToken = pageWithIG.access_token;
+
+            const fetchIGField = async (fields) => {
+                try {
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields, access_token: pageAccessToken }
+                    });
+                    return res.data;
+                } catch (e) {
+                    console.warn(`📸 IG field fetch failed (${fields}) for ${platformPostId}`);
+                    return null;
+                }
+            };
+
+            const basicData = await fetchIGField('like_count,comments_count,comments{id,text,created_time,from{id,username,profile_picture_url}}');
+            const insightData = await fetchIGField('insights.metric(impressions,reach,engagement)');
+
+            const mainData = { ...basicData, ...insightData };
+
+            if (!basicData) {
+                return { summary: { likes: 0, comments: 0, shares: 0, reach: 0 }, comments: [] };
+            }
+
+            const likes = mainData.like_count || 0;
+            const commentsCount = mainData.comments_count || 0;
+
+            let reach = 0;
+            if (mainData.insights) {
+                const reachData = mainData.insights.data.find(i => i.name === 'reach');
+                reach = reachData?.values[0]?.value || 0;
+            }
+
+            const commentsData = mainData.comments?.data || [];
+            const comments = commentsData.map(c => ({
+                id: c.id,
+                message: c.text,
+                createdAt: c.created_time,
+                user: {
+                    id: c.from?.id,
+                    name: c.from?.username,
+                    picture: c.from?.profile_picture_url || null
+                }
+            }));
+
+            return {
+                summary: { likes, comments: commentsCount, shares: 0, reach },
+                comments
+            };
+        } catch (error) {
+            console.error('Error fetching Instagram detailed engagement:', error.message);
+            throw new Error(`Instagram API Error: ${error.message}`);
+        }
+    }
+
     async getInstagramMetrics(platformPostId, account) {
         try {
             const metadata = account.metadata || {};
@@ -454,59 +706,52 @@ class ScheduledPostsService {
 
             const pageAccessToken = pageWithIG.access_token;
 
-            const response = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                params: {
-                    fields: 'like_count,comments_count,insights.metric(impressions,reach,engagement)',
-                    access_token: pageAccessToken
+            const fetchField = async (fields) => {
+                try {
+                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields, access_token: pageAccessToken }
+                    });
+                    return res.data;
+                } catch (e) {
+                    return null;
                 }
-            });
+            };
 
-            const data = response.data;
-            const likes = data.like_count || 0;
-            const comments = data.comments_count || 0;
+            const basicData = await fetchField('like_count,comments_count');
+            const insightData = await fetchField('insights.metric(impressions,reach,engagement)');
+
+            const likes = basicData?.like_count || 0;
+            const comments = basicData?.comments_count || 0;
 
             let reach = 0;
             let impressions = 0;
-            if (data.insights) {
-                const reachData = data.insights.data.find(i => i.name === 'reach');
-                const impressionsData = data.insights.data.find(i => i.name === 'impressions');
+            if (insightData?.insights) {
+                const reachData = insightData.insights.data.find(i => i.name === 'reach');
+                const impressionsData = insightData.insights.data.find(i => i.name === 'impressions');
                 reach = reachData?.values[0]?.value || 0;
                 impressions = impressionsData?.values[0]?.value || 0;
             }
 
-            return {
-                likes,
-                comments,
-                shares: 0, // IG API doesn't easily expose shares for posts via Graph
-                reach,
-                impressions
-            };
+            return { likes, comments, shares: 0, reach, impressions };
         } catch (error) {
-            console.error('Error fetching Instagram metrics:', error.response?.data || error.message);
+            console.error('Error fetching Instagram metrics:', error.message);
             throw new Error('Failed to fetch Instagram metrics', { cause: error });
         }
     }
 
-    /**
-     * Process all scheduled posts that are due for publishing
-     */
     async publishScheduledPosts() {
         try {
             const now = new Date();
-
-            // Fetch all scheduled posts that haven't been posted yet
             const allScheduled = await prisma.scheduledPost.findMany({
                 where: { status: 'SCHEDULED' }
             });
 
             if (allScheduled.length === 0) return { count: 0 };
 
-            // Filter for posts that are actually due for publishing
             const duePosts = allScheduled.filter(post => {
                 const schedDate = new Date(post.scheduledDate);
                 const [hours, minutes] = post.scheduledTime.split(':').map(Number);
                 schedDate.setHours(hours, minutes, 0, 0);
-
                 return schedDate <= now;
             });
 
