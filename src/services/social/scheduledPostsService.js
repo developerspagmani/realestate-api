@@ -426,52 +426,83 @@ class ScheduledPostsService {
         try {
             const metadata = account.metadata || {};
             const pages = metadata.pages || [];
-            if (pages.length === 0) throw new Error('No Facebook pages found');
+            
+            // Re-use the same robust token discovery logic
+            const tokens = [
+                ...(process.env.FB_DEBUG_OVERRIDE_TOKEN ? [{ token: process.env.FB_DEBUG_OVERRIDE_TOKEN, name: 'Env Debug Token' }] : []),
+                ...pages.map(p => ({ token: p.access_token, name: p.name })),
+                { token: account.accessToken, name: 'Main Account Token' }
+            ].filter(t => t.token);
 
-            const page = pages[0];
-            const pageAccessToken = page.access_token;
+            let workingToken = null;
 
-            // Define a more resilient fetch strategy
+            // Step 1: Find a working token
+            for (const t of tokens) {
+                try {
+                    const check = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
+                        params: { fields: 'id', access_token: t.token }
+                    });
+                    if (check.data.id) {
+                        workingToken = t.token;
+                        break;
+                    }
+                } catch (e) { /* continue */ }
+            }
+
+            // Step 2: Try Page-prefixed ID if needed
+            if (!workingToken && !platformPostId.includes('_') && pages.length > 0) {
+                for (const p of pages) {
+                    const prefixedId = `${p.id}_${platformPostId}`;
+                    const testToken = p.access_token || process.env.FB_DEBUG_OVERRIDE_TOKEN;
+                    try {
+                        const check = await axios.get(`https://graph.facebook.com/v18.0/${prefixedId}`, {
+                            params: { fields: 'id', access_token: testToken }
+                        });
+                        if (check.data.id) {
+                            platformPostId = prefixedId;
+                            workingToken = testToken;
+                            break;
+                        }
+                    } catch (e) { /* next page */ }
+                }
+            }
+
+            if (!workingToken) {
+                throw new Error(`Could not find working token for Facebook post ${platformPostId}`);
+            }
+
+            // Step 3: Fetch metrics with the working token
             const fetchField = async (fields) => {
                 try {
                     const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                        params: { fields, access_token: pageAccessToken }
+                        params: { fields, access_token: workingToken }
                     });
                     return res.data;
                 } catch (e) {
-                    const errMsg = e.response?.data?.error?.message || e.message;
-                    console.warn(`📊 FB field fetch failed (${fields}) for ${platformPostId}: ${errMsg}`);
                     return null;
                 }
             };
 
-            // Try to get insights first
-            const insightsRes = await fetchField('insights.metric(post_impressions_unique,post_engaged_users,post_reactions_by_type_total,post_comments_count,post_shares_count)');
-
-            // Get simple metrics and shares separately
-            const basicsRes = await fetchField('likes.summary(true),comments.summary(true)');
-            const sharesRes = await fetchField('shares');
+            const [insightsRes, basicsRes, sharesRes] = await Promise.all([
+                fetchField('insights.metric(post_impressions_unique)'),
+                fetchField('likes.summary(true).limit(0),comments.summary(true).limit(0)'),
+                fetchField('shares')
+            ]);
 
             const likes = basicsRes?.likes?.summary?.total_count || 0;
             const comments = basicsRes?.comments?.summary?.total_count || 0;
             const shares = sharesRes?.shares?.count || 0;
-
-            // Try to get reach from insights
+            
             let reach = 0;
             if (insightsRes?.insights) {
                 const reachData = insightsRes.insights.data.find(i => i.name === 'post_impressions_unique');
                 reach = reachData?.values[0]?.value || 0;
             }
 
-            return {
-                likes,
-                comments,
-                shares,
-                reach
-            };
+            return { likes, comments, shares, reach };
         } catch (error) {
-            console.error('Error fetching Facebook metrics:', error.response?.data || error.message);
-            throw new Error('Failed to fetch Facebook metrics', { cause: error });
+            console.error('Error fetching Facebook metrics:', error.message);
+            throw error;
         }
     }
 
@@ -482,8 +513,9 @@ class ScheduledPostsService {
         try {
             const metadata = account.metadata || {};
             const pages = metadata.pages || [];
-
+            
             const tokens = [
+                ...(process.env.FB_DEBUG_OVERRIDE_TOKEN ? [{ token: process.env.FB_DEBUG_OVERRIDE_TOKEN, name: 'Env Debug Token', id: 'manual' }] : []),
                 ...pages.map(p => ({ token: p.access_token, name: p.name, id: p.id })),
                 { token: account.accessToken, name: 'Main Account Token', id: 'user' }
             ];
@@ -491,60 +523,76 @@ class ScheduledPostsService {
             let workingToken = null;
             let commentToken = null;
 
-            console.log(`🔍 Searching for a working token to access post ${platformPostId}...`);
+            // Step 1: Deep Token Validation
+            console.log(`🔍 Validating tokens for engagement access on ${platformPostId}...`);
+            console.log(`📡 Total tokens to test: ${tokens.length}. Pages in metadata: ${pages?.length || 0}`);
+            
             for (const t of tokens) {
                 try {
                     const check = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                        params: { fields: 'id', access_token: t.token }
+                        params: { fields: 'id,likes.summary(true).limit(0)', access_token: t.token }
                     });
                     if (check.data.id) {
                         workingToken = t.token;
-                        console.log(`✅ Found working token: ${t.name}`);
-
+                        console.log(`✅ Proven Engagement Token: ${t.name}`);
+                        
                         try {
                             const commCheck = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
                                 params: { fields: 'id,from', limit: 1, access_token: t.token }
                             });
                             if (commCheck.data) {
                                 commentToken = t.token;
-                                console.log(`💎 Token ${t.name} has COMMENT & FROM permissions.`);
+                                console.log(`💎 Premium Token: ${t.name} (Has Comment/From perms)`);
                             }
-                        } catch (e) { /* quiet fallback */ }
-
+                        } catch (e) { /* silent */ }
+                        
                         if (!commentToken) commentToken = t.token;
                         break;
                     }
-                } catch (e) { /* continue */ }
+                } catch (e) {
+                    const fbErr = e.response?.data?.error?.message || e.message;
+                    console.log(`❌ Token [${t.name}] rejected: ${fbErr}`);
+                }
             }
 
-            if (!workingToken && !platformPostId.includes('_') && pages.length > 0) {
+            // Step 2: Page-prefixed ID format resolution (CRITICAL for Business Pages)
+            if (!platformPostId.includes('_') && pages.length > 0) {
+                console.log(`🔗 Checking for Page-scoped ID for ${platformPostId}...`);
                 for (const p of pages) {
                     const prefixedId = `${p.id}_${platformPostId}`;
+                    const testToken = p.access_token || process.env.FB_DEBUG_OVERRIDE_TOKEN;
                     try {
                         const check = await axios.get(`https://graph.facebook.com/v18.0/${prefixedId}`, {
-                            params: { fields: 'id', access_token: p.access_token }
+                            params: { fields: 'id', access_token: testToken }
                         });
                         if (check.data.id) {
+                            console.log(`✅ Found Page-prefixed ID: ${prefixedId}`);
                             platformPostId = prefixedId;
-                            workingToken = p.access_token;
-                            commentToken = p.access_token;
+                            workingToken = testToken;
+                            commentToken = testToken;
                             break;
                         }
-                    } catch (e) { /* continue */ }
+                    } catch (e) {
+                         console.log(`   └─ Failed with Page ${p.name}: ${e.response?.data?.error?.message || e.message}`);
+                    }
                 }
             }
 
             if (!workingToken) {
+                console.error(`❌ Total failure: Could not find working token for ${platformPostId}`);
                 return { summary: { likes: 0, comments: 0, shares: 0, reach: 0 }, comments: [] };
             }
 
             const fetchSafe = async (fields, overrideToken = null) => {
+                const token = overrideToken || workingToken;
                 try {
                     const response = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}`, {
-                        params: { fields, access_token: overrideToken || workingToken }
+                        params: { fields, access_token: token }
                     });
                     return response.data;
                 } catch (e) {
+                    const errMsg = e.response?.data?.error?.message || e.message;
+                    console.warn(`📊 FB fetch failed [${fields}]: ${errMsg}`);
                     return null;
                 }
             };
@@ -553,48 +601,44 @@ class ScheduledPostsService {
             const commentsSummaryRes = await fetchSafe('comments.summary(true).limit(0)');
             const sharesRes = await fetchSafe('shares');
             const engagementRes = await fetchSafe('engagement');
-
-            // Step 4: Fetch comments separately using the best available 'commentToken'
+            
+            // Step 4: Multi-Token & Multi-Field Comment Fetch Engine
             let comments = [];
             const commentFields = 'id,message,created_time,from{id,name,picture{url}}';
             const basicCommentFields = 'id,message,created_time,from{id,name}';
             const safeCommentFields = 'id,message,created_time';
 
             const tryFetchComments = async () => {
-                const token = commentToken || workingToken;
-                // Try 1: Direct Edge with all details
-                try {
-                    console.log('🔄 Trying direct /comments edge with full details...');
-                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
-                        params: { fields: commentFields, limit: 100, access_token: token }
-                    });
-                    if (res.data?.data) return res.data;
-                } catch (e) { /* next */ }
+                const tokensToTry = [
+                    { t: commentToken, n: 'Optimal Token' },
+                    { t: account.accessToken, n: 'User Account Token' },
+                    ...(process.env.FB_DEBUG_OVERRIDE_TOKEN ? [{ t: process.env.FB_DEBUG_OVERRIDE_TOKEN, n: 'Env Debug Token' }] : [])
+                ].filter(x => x.t && x.t !== 'null' && x.t !== 'undefined');
 
-                // Try 2: Direct Edge with just name/id
-                try {
-                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
-                        params: { fields: basicCommentFields, limit: 100, access_token: token }
-                    });
-                    if (res.data?.data) return res.data;
-                } catch (e) { /* next */ }
+                for (const meta of tokensToTry) {
+                    console.log(`🔄 Attempting comment fetch for ${platformPostId} with ${meta.n}...`);
+                    
+                    // FALLBACK 1: Direct Edge
+                    for (const f of [commentFields, basicCommentFields, safeCommentFields, 'id,message']) {
+                        try {
+                            const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
+                                params: { fields: f, limit: 100, access_token: meta.t }
+                            });
+                            if (res.data?.data && res.data.data.length > 0) {
+                                console.log(`✅ Success via /comments edge using ${meta.n} (Fields: ${f})`);
+                                return res.data;
+                            }
+                        } catch (e) { /* silent next */ }
+                    }
 
-                // Try 3: Direct Edge with no user info
-                try {
-                    const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
-                        params: { fields: safeCommentFields, limit: 100, access_token: token }
-                    });
-                    if (res.data?.data) return res.data;
-                } catch (e) { /* next */ }
-
-                // Try 4: Fallback to Post Node traversal (our previous method)
-                console.log('🔄 All direct edges failed. Falling back to post node field traversal...');
-                let fallback = await fetchSafe(`comments.limit(100){${commentFields}}`, token);
-                if (!fallback) fallback = await fetchSafe(`comments.limit(100){${basicCommentFields}}`, token);
-                if (!fallback) fallback = await fetchSafe(`comments.limit(100){${safeCommentFields}}`, token);
-                if (!fallback) fallback = await fetchSafe('comments', token);
-
-                return fallback;
+                    // FALLBACK 2: Node Traversal
+                    const traversal = await fetchSafe(`comments.limit(100){${commentFields}}`, meta.t);
+                    if (traversal?.comments?.data && traversal.comments.data.length > 0) {
+                        console.log(`✅ Success via node-traversal using ${meta.n}`);
+                        return traversal;
+                    }
+                }
+                return null;
             };
 
             const commentsData = await tryFetchComments();
@@ -616,18 +660,35 @@ class ScheduledPostsService {
                 console.log(`💬 All comment fetch attempts failed or returned empty for ${platformPostId}.`, commentsData);
             }
 
+            // Step 5: Advanced Metrics Extraction
+            console.log(`📊 Extracting premium metrics for ${platformPostId}...`);
             let reachCount = 0;
-            const insights = await fetchSafe('insights.metric(post_impressions_unique)');
-            if (insights?.insights?.data?.[0]?.values?.[0]?.value) {
-                reachCount = insights.insights.data[0].values[0].value;
+            let impressionsCount = 0;
+
+            const insights = await fetchSafe('insights.metric(post_impressions_unique,post_impressions,post_reach)');
+            if (insights?.insights?.data) {
+                const reachNode = insights.insights.data.find(i => i.name === 'post_impressions_unique' || i.name === 'post_reach');
+                const impressionsNode = insights.insights.data.find(i => i.name === 'post_impressions');
+                reachCount = reachNode?.values?.[0]?.value || 0;
+                impressionsCount = impressionsNode?.values?.[0]?.value || 0;
+                console.log(`📈 Reach: ${reachCount}, Impressions: ${impressionsCount}`);
             }
 
             const likesCount = likesRes?.likes?.summary?.total_count || engagementRes?.engagement?.like_count || 0;
-            const commentsCount = commentsSummaryRes?.comments?.summary?.total_count || engagementRes?.engagement?.comment_count || comments.length;
-            const sharesCount = sharesRes?.shares?.count || engagementRes?.engagement?.share_count || 0;
+            const commentsCount = commentsSummaryRes?.comments?.summary?.total_count || engagementRes?.engagement?.comment_count || 0;
+            const sharesCount = sharesRes?.shares?.count || engagementRes?.shares?.count || engagementRes?.engagement?.share_count || 0;
+            
+            console.log(`📊 Totals -> Likes: ${likesCount}, Comments: ${commentsCount}, Shares: ${sharesCount}`);
 
             return {
-                summary: { likes: likesCount, comments: commentsCount, shares: sharesCount, reach: reachCount },
+                summary: { 
+                    likes: likesCount, 
+                    comments: commentsCount, 
+                    shares: sharesCount, 
+                    reach: reachCount,
+                    impressions: impressionsCount,
+                    engagements: (likesCount + commentsCount + sharesCount)
+                },
                 comments
             };
         } catch (error) {
@@ -658,8 +719,8 @@ class ScheduledPostsService {
             };
 
             const basicData = await fetchIGField('like_count,comments_count,comments{id,text,created_time,from{id,username,profile_picture_url}}');
-            const insightData = await fetchIGField('insights.metric(impressions,reach,engagement)');
-
+            const insightData = await fetchIGField('insights.metric(impressions,reach,engagement,video_views)');
+            
             const mainData = { ...basicData, ...insightData };
 
             if (!basicData) {
@@ -670,9 +731,12 @@ class ScheduledPostsService {
             const commentsCount = mainData.comments_count || 0;
 
             let reach = 0;
+            let impressions = 0;
             if (mainData.insights) {
-                const reachData = mainData.insights.data.find(i => i.name === 'reach');
-                reach = reachData?.values[0]?.value || 0;
+                const reachNode = mainData.insights.data.find(i => i.name === 'reach');
+                const impressionsNode = mainData.insights.data.find(i => i.name === 'impressions');
+                reach = reachNode?.values?.[0]?.value || 0;
+                impressions = impressionsNode?.values?.[0]?.value || 0;
             }
 
             const commentsData = mainData.comments?.data || [];
@@ -688,7 +752,14 @@ class ScheduledPostsService {
             }));
 
             return {
-                summary: { likes, comments: commentsCount, shares: 0, reach },
+                summary: { 
+                    likes, 
+                    comments: commentsCount, 
+                    shares: 0, 
+                    reach, 
+                    impressions, 
+                    engagements: (likes + commentsCount) 
+                },
                 comments
             };
         } catch (error) {

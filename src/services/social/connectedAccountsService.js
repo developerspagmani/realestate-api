@@ -48,7 +48,7 @@ class ConnectedAccountsService {
 
         // If it's Facebook and we don't have pages in metadata, sync it now
         // This handles both OAuth redirect and SDK popup flows
-        if (platform === 'FACEBOOK' && (!account.metadata || !account.metadata.pages || account.metadata.pages.length === 0)) {
+        if ((platform === 'FACEBOOK' || platform === 'INSTAGRAM') && (!account.metadata || !account.metadata.pages || account.metadata.pages.length === 0)) {
             try {
                 console.log(`🔄 Triggering initial sync for Facebook account: ${account.id}`);
                 account = await this.syncAccountData(account.id, userId, tenantId);
@@ -329,8 +329,9 @@ class ConnectedAccountsService {
             throw new Error('Account not found');
         }
 
-        if (account.platform === 'FACEBOOK') {
+        if (account.platform === 'FACEBOOK' || account.platform === 'INSTAGRAM') {
             try {
+                console.log(`🔄 Syncing Meta data for ${account.platform} account: ${accountId}`);
                 // Refresh pages data
                 const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
                     params: {
@@ -348,13 +349,37 @@ class ConnectedAccountsService {
                     lastSynced: new Date().toISOString()
                 };
 
-                return await prisma.connectedAccount.update({
+                const updatedAccount = await prisma.connectedAccount.update({
                     where: { id: accountId },
                     data: {
                         metadata: updatedMetadata,
                         updatedAt: new Date()
                     }
                 });
+
+                // CROSS-SYNC: If we're on FB and find an IG, or vice-versa, ensure BOTH exist
+                const pageWithIG = pages.find(p => p.instagram_business_account);
+                
+                if (pageWithIG && account.platform === 'FACEBOOK') {
+                    // We found an IG account while syncing FB, make sure IG is connected too
+                    console.log(`📸 Found linked Instagram during FB sync: ${pageWithIG.instagram_business_account.id}`);
+                    await this.connectAccount({
+                        tenantId,
+                        userId,
+                        platform: 'INSTAGRAM',
+                        accessToken: account.accessToken,
+                        accountId: pageWithIG.instagram_business_account.id,
+                        accountName: pageWithIG.instagram_business_account.name || `${account.accountName} (Instagram)`,
+                        metadata: {
+                            linkedFacebookPage: pageWithIG.name,
+                            linkedFacebookPageId: pageWithIG.id,
+                            pages: pages,
+                            syncedFrom: 'facebook_sync'
+                        }
+                    });
+                }
+
+                return updatedAccount;
             } catch (error) {
                 console.error('Sync account data error:', error.response?.data || error.message);
                 throw new Error('Failed to sync account data', { cause: error });
