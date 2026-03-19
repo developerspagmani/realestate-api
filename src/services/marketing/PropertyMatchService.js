@@ -35,9 +35,17 @@ class PropertyMatchService {
 
             const viewedProperties = propertyIds.length > 0 ? await prisma.property.findMany({
                 where: { id: { in: propertyIds } },
-                include: {
+                select: {
+                    id: true,
+                    city: true,
+                    propertyType: true,
+                    bedrooms: true,
                     units: {
-                        include: { unitPricing: true }
+                        select: {
+                            unitPricing: {
+                                select: { price: true }
+                            }
+                        }
                     }
                 }
             }) : [];
@@ -148,12 +156,23 @@ class PropertyMatchService {
                         }
                     ]
                 },
-                include: {
+                select: {
+                    id: true,
+                    title: true,
+                    city: true,
+                    propertyType: true,
+                    bedrooms: true,
+                    bathrooms: true,
+                    slug: true,
                     mainImage: { select: { url: true } },
                     units: {
                         where: { status: 1 },
-                        include: {
+                        select: {
+                            id: true,
+                            unitCode: true,
+                            unitCategory: true,
                             unitPricing: {
+                                select: { price: true },
                                 take: 1,
                                 orderBy: { price: 'asc' }
                             }

@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "node src/database/generateSampleData.js",
+    "db:clean": "node src/database/cleanData.js",
     "db:studio": "prisma studio",
     "lint": "eslint .",
     "security-scan": "npm audit"

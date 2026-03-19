@@ -125,10 +125,71 @@ const sendTestEmail = async (req, res) => {
     }
 };
 
+const getEmailSettings = async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant ID required' });
+
+        const module = await prisma.tenantModule.findFirst({
+            where: { tenantId, module: { slug: 'marketing_hub' } }
+        });
+
+        const settings = module?.settings || {};
+        const emailConfig = settings.emailConfig || {
+            emailSkinColor: '#4f46e5',
+            showFooter: true,
+            footerText: '',
+            enableAiRecommendations: true
+        };
+
+        res.status(200).json({ success: true, data: emailConfig });
+    } catch (error) {
+        console.error('Get email settings error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+const saveEmailSettings = async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id || req.user?.tenantId;
+        const config = req.body;
+
+        if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant ID required' });
+
+        const module = await prisma.tenantModule.findFirst({
+            where: { tenantId, module: { slug: 'marketing_hub' } }
+        });
+
+        if (!module) return res.status(404).json({ success: false, message: 'Marketing module not active' });
+
+        const updatedSettings = {
+            ...(module.settings || {}),
+            emailConfig: config
+        };
+
+        await prisma.tenantModule.update({
+            where: {
+                tenantId_moduleId: {
+                    tenantId: module.tenantId,
+                    moduleId: module.moduleId
+                }
+            },
+            data: { settings: updatedSettings }
+        });
+
+        res.status(200).json({ success: true, message: 'Email configuration saved successfully' });
+    } catch (error) {
+        console.error('Save email settings error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
 module.exports = {
     getAllTemplates,
     createTemplate,
     updateTemplate,
     deleteTemplate,
-    sendTestEmail
+    sendTestEmail,
+    getEmailSettings,
+    saveEmailSettings
 };

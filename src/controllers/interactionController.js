@@ -22,35 +22,57 @@ const SCORING_RULES = {
  */
 const trackInteraction = async (req, res) => {
     try {
-        const { leadId, email, visitorId, type, metadata } = req.body;
-        const tenantId = req.tenant?.id;
+        let { leadId, email, visitorId, type, metadata } = req.body;
+        let tenantId = req.tenant?.id || metadata?.tenantId;
+        const widgetId = metadata?.widgetId;
 
         if (!type || (!leadId && !email && !visitorId)) {
             return res.status(400).json({ success: false, message: 'Type and Lead identifier (ID, email, or visitorId) required' });
         }
 
+        // If we don't have a direct tenant context but have a widget context, resolve it
+        if (!tenantId && widgetId) {
+            const widget = await prisma.widget.findFirst({
+                where: { uniqueId: widgetId },
+                select: { tenantId: true }
+            });
+            if (widget) tenantId = widget.tenantId;
+        }
+
+        // UUID validation helper
+        const isUuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
         // Find the lead with Identity Resolution
         let lead;
-        if (leadId) {
+        if (leadId && isUuid(leadId)) {
             lead = await prisma.lead.findUnique({ where: { id: leadId } });
-        } else if (email) {
-            // Find by email if leadId not provided
+        } else if (email && tenantId && isUuid(tenantId)) {
             lead = await prisma.lead.findFirst({
                 where: { email, tenantId },
                 orderBy: { createdAt: 'desc' }
             });
-        } else if (visitorId) {
-            // Find by browser-persistent visitor ID
+        } else if (visitorId && tenantId && isUuid(tenantId)) {
             lead = await prisma.lead.findFirst({
                 where: { visitorId, tenantId },
                 orderBy: { createdAt: 'desc' }
             });
         }
 
+        // If lead not found and we have visitorId + tenantId, create an anonymous lead
+        if (!lead && visitorId && tenantId && isUuid(tenantId)) {
+            lead = await prisma.lead.create({
+                data: {
+                    visitorId,
+                    tenantId,
+                    name: 'Anonymous Visitor',
+                    status: 1, // Active
+                    source: 5 // Widget/Public
+                }
+            });
+        }
+
         if (!lead) {
-            // Log as anonymous or ignore depending on business rule
-            // For now, return 404 to match existing behavior but could be used to create 'ghost' leads
-            return res.status(404).json({ success: false, message: 'Lead not found for provided identifiers' });
+            return res.status(404).json({ success: false, message: 'Lead not found and cannot be identified/created in current context' });
         }
 
         const scoreWeight = SCORING_RULES[type] || 0;

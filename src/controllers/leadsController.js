@@ -146,10 +146,7 @@ const getAllLeads = async (req, res) => {
               }
             }
           },
-          interactions: {
-            orderBy: { occurredAt: 'desc' },
-            take: 5
-          },
+          /* Removed interactions for performance - fetched on demand */
           agentLeads: {
             where: { status: 1 },
             include: {

@@ -46,7 +46,29 @@ const sendRecommendationEmailDirectly = async (req, res) => {
             return res.status(400).json({ success: false, message: 'No recommendations found for this lead' });
         }
 
-        const emailSent = await sendPropertyRecommendationEmail(lead.email, lead.name, recommendations);
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            include: {
+                tenantModules: {
+                    where: { module: { slug: 'marketing_hub' } }
+                }
+            }
+        });
+
+        const emailConfig = tenant.tenantModules[0]?.settings?.emailConfig || {};
+        const currencySymbol = tenant.settings?.currencySymbol || '$';
+
+        const emailSent = await sendPropertyRecommendationEmail(
+            lead.email, 
+            lead.name, 
+            recommendations,
+            { 
+                name: tenant.name, 
+                customDomain: tenant.domain, 
+                currencySymbol, 
+                ...emailConfig 
+            }
+        );
 
         if (emailSent) {
             // Track this as an interaction

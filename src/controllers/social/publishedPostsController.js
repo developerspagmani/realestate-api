@@ -31,7 +31,9 @@ const getPublishedPosts = async (req, res) => {
                 include: {
                     scheduledPost: {
                         include: {
-                            property: true
+                            property: {
+                                select: { id: true, title: true }
+                            }
                         }
                     },
                     user: {
@@ -79,7 +81,9 @@ const getPublishedPostById = async (req, res) => {
             include: {
                 scheduledPost: {
                     include: {
-                        property: true
+                            property: {
+                                select: { id: true, title: true }
+                            }
                     }
                 },
                 user: {

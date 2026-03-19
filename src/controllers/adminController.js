@@ -180,7 +180,13 @@ const getDashboardStats = async (req, res) => {
         },
         take: 5,
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          title: true,
+          city: true,
+          price: true,
+          status: true,
+          createdAt: true,
           mainImage: { select: { url: true } }
         }
       }),
@@ -706,7 +712,20 @@ const getAllProperties = async (req, res) => {
     const [properties, total] = await Promise.all([
       prisma.property.findMany({
         where,
-        include: { _count: { select: { units: true } } },
+        select: {
+          id: true,
+          title: true,
+          addressLine1: true,
+          city: true,
+          state: true,
+          country: true,
+          price: true,
+          status: true,
+          listingType: true,
+          createdAt: true,
+          _count: { select: { units: true } },
+          mainImage: { select: { url: true } }
+        },
         skip,
         take: parseInt(limit)
       }),

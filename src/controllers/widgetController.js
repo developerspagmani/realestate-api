@@ -76,6 +76,10 @@ const widgetController = {
                 return res.status(400).json({ success: false, message: 'Widget Unique ID already exists.' });
             }
 
+            // Sanitize UUID
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+            const safePropertyId = (propertyId && uuidRegex.test(propertyId)) ? propertyId : null;
+
             const widget = await prisma.widget.create({
                 data: {
                     name,
@@ -83,7 +87,7 @@ const widgetController = {
                     configuration,
                     uniqueId,
                     tenantId: finalTenantId,
-                    propertyId: propertyId === 'global' ? null : propertyId
+                    propertyId: safePropertyId
                 }
             });
 
@@ -108,14 +112,18 @@ const widgetController = {
             const where = { id };
             if (effectiveTenantId) where.tenantId = effectiveTenantId;
 
+            // Sanitize UUID
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+            const safePropertyId = (propertyId && uuidRegex.test(propertyId)) ? propertyId : null;
+
             const widget = await prisma.widget.updateMany({
                 where,
                 data: {
-                    name,
-                    type,
-                    configuration,
-                    status,
-                    propertyId: propertyId === 'global' ? null : propertyId
+                    ...(name && { name }),
+                    ...(type && { type }),
+                    ...(configuration && { configuration }),
+                    ...(status !== undefined && { status: Number(status) }),
+                    propertyId: safePropertyId
                 }
             });
 
@@ -126,7 +134,8 @@ const widgetController = {
             const updatedWidget = await prisma.widget.findUnique({ where: { id } });
 
             res.json({ success: true, data: updatedWidget });
-        } catch (_error) {
+        } catch (error) {
+            console.error('Error updating widget:', error);
             res.status(500).json({ success: false, message: 'Server error updating widget.' });
         }
     },
@@ -180,7 +189,9 @@ const widgetController = {
 
             // Fetch the items based on widget configuration
             // Prioritize the top-level propertyId column
-            const propertyId = widget.propertyId || widget.configuration.settings?.propertyId;
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+            let propertyId = widget.propertyId || widget.configuration.settings?.propertyId;
+            if (propertyId && !uuidRegex.test(propertyId)) propertyId = null;
 
             const properties = await prisma.property.findMany({
                 where: {
@@ -263,7 +274,8 @@ const widgetController = {
                 widget,
                 data: properties
             });
-        } catch (_error) {
+        } catch (error) {
+            console.error('Error loading public widget:', error);
             res.status(500).json({ success: false, message: 'Error loading widget.' });
         }
     },
@@ -300,6 +312,11 @@ const widgetController = {
 
             const isBooking = req.body.isBooking === true || req.body.isBooking === 'true';
 
+            // Sanitize UUIDs
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+            const safePropertyId = (propertyId && uuidRegex.test(propertyId)) ? propertyId : null;
+            const safeUnitId = (unitId && uuidRegex.test(unitId)) ? unitId : null;
+
             // Upsert or Check-Update to avoid duplicates for the same person
             let lead = await prisma.lead.findFirst({
                 where: {
@@ -324,8 +341,8 @@ const widgetController = {
                     data: {
                         notes: (lead.notes || '') + `\n[Update] Re-engaged via ${source === 'widget_chatbot' ? 'chatbot' : (isBooking ? 'booking form' : 'widget form')}.`,
                         updatedAt: new Date(),
-                        propertyId: propertyId || lead.propertyId,
-                        unitId: unitId || lead.unitId,
+                        propertyId: safePropertyId || lead.propertyId,
+                        unitId: safeUnitId || lead.unitId,
                         preferences: { ...currentPrefs, tags: currentTags }
                     }
                 });
@@ -338,8 +355,8 @@ const widgetController = {
                         source: source === 'widget_chatbot' ? 7 : (Number(source) || 1),
                         notes: notes || (isBooking ? 'Booking request captured from widget.' : 'Lead captured from widget.'),
                         tenantId: widget.tenantId,
-                        unitId,
-                        propertyId,
+                        unitId: safeUnitId,
+                        propertyId: safePropertyId,
                         status: 1,
                         preferences: isBooking ? { tags: ['Booking'] } : {}
                     }
@@ -368,8 +385,8 @@ const widgetController = {
                         type: interactionType,
                         metadata: {
                             notes: `Inquiry from ${source === 'widget_chatbot' ? 'Chatbot' : 'Widget'}.`,
-                            propertyId: propertyId || lead.propertyId,
-                            unitId: unitId || null,
+                            propertyId: safePropertyId || lead.propertyId,
+                            unitId: safeUnitId || null,
                             widgetId: widget.id
                         },
                         scoreWeight: scoreWeight
@@ -393,8 +410,8 @@ const widgetController = {
                     await tx.booking.create({
                         data: {
                             tenantId: widget.tenantId,
-                            propertyId: propertyId || null,
-                            unitId: unitId || null,
+                            propertyId: safePropertyId || null,
+                            unitId: safeUnitId || null,
                             leadId: lead.id,
                             guestName: lead.name,
                             guestEmail: lead.email,

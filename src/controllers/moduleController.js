@@ -70,6 +70,13 @@ const moduleController = {
         try {
             const { tenantId } = req.user;
 
+            if (!tenantId) {
+                return res.json({
+                    success: true,
+                    data: [] // No modules for users without a tenant (like Partners)
+                });
+            }
+
             // 1. Get manually assigned modules
             const activeManualModules = await prisma.tenantModule.findMany({
                 where: { tenantId, isActive: true },

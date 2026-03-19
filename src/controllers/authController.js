@@ -25,7 +25,7 @@ const checkLoginAttempts = async (identifier) => {
 
   // Reset if lockout expired
   if (attempts.lockedUntil && Date.now() > new Date(attempts.lockedUntil).getTime()) {
-    await prisma.loginAttempt.delete({ where: { identifier } });
+    await prisma.loginAttempt.deleteMany({ where: { identifier } });
     return { allowed: true };
   }
 
@@ -64,9 +64,24 @@ const recordFailedLogin = async (identifier) => {
 
 const clearLoginAttempts = async (identifier) => {
   try {
-    await prisma.loginAttempt.delete({ where: { identifier } });
+    await prisma.loginAttempt.deleteMany({ where: { identifier } });
   } catch (_e) {
     // Ignore if already deleted
+  }
+};
+
+/**
+ * Helper to get email settings for a tenant
+ */
+const getTenantEmailSettings = async (tenantId) => {
+  if (!tenantId) return {};
+  try {
+    const module = await prisma.tenantModule.findFirst({
+      where: { tenantId, module: { slug: 'marketing_hub' } }
+    });
+    return module?.settings?.emailConfig || {};
+  } catch (_e) {
+    return {};
   }
 };
 
@@ -77,7 +92,7 @@ const register = async (req, res) => {
       email, password, firstName, lastName, phone,
       companyName, spaceName, type, // Tenant fields
       website, addressLine1, addressLine2, city, state, country, zipCode,
-      planId, licenseKey // New fields
+      planId, licenseKey, referrerId // Added referrerId
     } = req.body;
 
     // Check if user already exists
@@ -152,6 +167,7 @@ const register = async (req, res) => {
             country,
             postalCode: zipCode,
             status: 1,
+            referredById: referrerId, // Tracking partner referral
             planId: actualPlanId || undefined,
             subscriptionStatus: licenseKey ? SubscriptionStatus.ACTIVE : SubscriptionStatus.TRIAL,
             subscriptionExpiresAt: licenseKey
@@ -253,7 +269,12 @@ const register = async (req, res) => {
     const { user, tenant } = result;
 
     // Send activation email
-    await sendActivationEmail(user.email, user.activationToken, user.firstName);
+    const emailSettings = await getTenantEmailSettings(user.tenantId);
+    await sendActivationEmail(user.email, user.activationToken, user.firstName, {
+      name: tenant?.name,
+      customDomain: tenant?.domain,
+      ...emailSettings
+    });
 
     res.status(201).json({
       success: true,
@@ -283,7 +304,8 @@ const verifyEmail = async (req, res) => {
     }
 
     const user = await prisma.user.findFirst({
-      where: { activationToken: token }
+      where: { activationToken: token },
+      include: { tenant: true }
     });
 
     if (!user) {
@@ -308,7 +330,12 @@ const verifyEmail = async (req, res) => {
     });
 
     // Send confirmation/welcome email
-    await sendAccountConfirmationEmail(user.email, user.firstName || user.name);
+    const emailSettings = await getTenantEmailSettings(user.tenantId);
+    await sendAccountConfirmationEmail(user.email, user.firstName || user.name, {
+      name: user.tenant?.name,
+      customDomain: user.tenant?.domain,
+      ...emailSettings
+    });
 
     res.status(200).json({
       success: true,
@@ -361,27 +388,19 @@ const login = async (req, res) => {
       });
     }
 
-    // Verify tenant if tenant domain/ID is provided in headers
+    // SEC-09 fix: Tenant verification
     const tenantIdentifier = req.headers['x-tenant-domain'];
     if (tenantIdentifier && user.tenantId) {
-      // Check if it matches the user's tenant directly
       if (user.tenantId !== tenantIdentifier) {
-        // If it doesn't match the ID, it might be a domain
         const tenant = await prisma.tenant.findUnique({
           where: { domain: tenantIdentifier }
         });
-
-        // If a tenant was found by domain but it doesn't match the user's tenant
         if (tenant && user.tenantId !== tenant.id) {
           return res.status(401).json({
             success: false,
             message: 'User does not belong to this tenant or invalid domain'
           });
         }
-
-        // If no tenant was found at all by that identifier (ID or domain), 
-        // it might be a stale cookie. We'll ignore it to allow login.
-        // If a tenant WAS found but didn't match, we already returned 401.
       }
     }
 
@@ -415,12 +434,6 @@ const login = async (req, res) => {
 
     // Generate token
     const token = generateToken(user.id, user.role);
-
-    // Update last login (if you have this field)
-    // await prisma.user.update({
-    //   where: { id: user.id },
-    //   data: { lastLogin: new Date() }
-    // });
 
     res.status(200).json({
       success: true,
@@ -534,7 +547,8 @@ const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      include: { tenant: true }
     });
 
     if (!user) {
@@ -558,8 +572,13 @@ const forgotPassword = async (req, res) => {
       }
     });
 
-    // Send email
-    await sendResetPasswordEmail(user.email, resetToken, user.firstName || user.name);
+    // Send email with settings
+    const emailSettings = await getTenantEmailSettings(user.tenantId);
+    await sendResetPasswordEmail(user.email, resetToken, user.firstName || user.name, {
+      name: user.tenant?.name,
+      customDomain: user.tenant?.domain,
+      ...emailSettings
+    });
 
     res.status(200).json({
       success: true,
@@ -597,10 +616,7 @@ const resetPassword = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired reset token'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
     }
 
     // Hash new password
@@ -637,14 +653,9 @@ const resetPassword = async (req, res) => {
 const logout = async (req, res) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) return res.status(200).json({ success: true, message: 'Logged out successfully' });
 
-    if (!token) {
-      return res.status(200).json({ success: true, message: 'Logged out successfully' });
-    }
-
-    // Decode token to get expiration
     const decoded = jwt.decode(token);
-
     if (decoded && decoded.exp) {
       await prisma.blacklistedToken.create({
         data: {
@@ -654,16 +665,9 @@ const logout = async (req, res) => {
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Logged out successfully'
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    res.status(200).json({ // Still return 200 for logout
-      success: true,
-      message: 'Logged out successfully'
-    });
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
+  } catch (_e) {
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
   }
 };
 

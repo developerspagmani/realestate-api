@@ -68,6 +68,9 @@ model Tenant {
   widgets               Widget[]
   workflowLogs          WorkflowLog[]
   popups                WebsitePopup[]
+  partnerProfiles       PartnerProfile[]
+  referredById          String?              @map("referred_by_id") @db.Uuid
+  referredBy            User?                 @relation("TenantReferrer", fields: [referredById], references: [id])
 
   @@map("tenants")
 }
@@ -145,6 +148,8 @@ model User {
   website              String?
   zipCode              String?              @map("zipcode")
   agent                Agent?
+  partnerProfile       PartnerProfile?
+  referredTenants      Tenant[]             @relation("TenantReferrer")
   auditLogs            AuditLog[]
   bookings             Booking[]
   connectedAccounts    ConnectedAccount[]
@@ -220,6 +225,7 @@ model Property {
   @@index([categoryId])
   @@index([status])
   @@index([propertyType])
+  @@index([city])
   @@map("properties")
 }
 
@@ -297,6 +303,8 @@ model UnitPricing {
   createdAt    DateTime @default(now()) @map("created_at")
   unit         Unit?    @relation(fields: [unitId], references: [id])
 
+  @@index([unitId])
+  @@index([price])
   @@map("unit_pricing")
 }
 
@@ -507,6 +515,7 @@ model LeadInteraction {
   tenant      Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
+  @@index([leadId, type])
   @@map("lead_interactions")
 }
 
@@ -1184,4 +1193,23 @@ model WebsitePopup {
   @@index([tenantId])
   @@index([websiteId])
   @@map("website_popups")
+}
+
+model PartnerProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName       String   @map("company_name")
+  website           String?
+  monthlyClientBase String?  @map("monthly_client_base")
+  country           String?
+  salesCapability   String?  @map("sales_capability")
+  commissionBalance Decimal  @default(0.0) @map("commission_balance") @db.Decimal(15, 2)
+  tenantId          String   @map("tenant_id") @db.Uuid
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("partner_profiles")
 }

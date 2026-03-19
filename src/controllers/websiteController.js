@@ -201,15 +201,18 @@ const websiteController = {
                 return res.status(404).json({ success: false, message: 'Website not found or inactive.' });
             }
 
-            const propertyIds = website.propertyIds && website.propertyIds.length > 0
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+            const rawPropertyIds = website.propertyIds && website.propertyIds.length > 0
                 ? website.propertyIds
                 : (website.propertyId ? [website.propertyId] : null);
+
+            const propertyIds = rawPropertyIds ? rawPropertyIds.filter(id => uuidRegex.test(id)) : null;
 
             const properties = await prisma.property.findMany({
                 where: {
                     tenantId: website.tenantId,
                     status: 1,
-                    ...(propertyIds ? { id: { in: propertyIds } } : {})
+                    ...(propertyIds && propertyIds.length > 0 ? { id: { in: propertyIds } } : {})
                 },
                 include: {
                     mainImage: true,
@@ -354,6 +357,11 @@ const websiteController = {
                 return res.status(400).json({ success: false, message: 'Contact information or identity required.' });
             }
 
+            // Sanitize UUIDs
+            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+            const safePropertyId = (propertyId && uuidRegex.test(propertyId)) ? propertyId : null;
+            const safeUnitId = (unitId && uuidRegex.test(unitId)) ? unitId : null;
+
             // Upsert or Check-Update to avoid duplicates (Identity Resolution Phase)
             let lead = await prisma.lead.findFirst({
                 where: {
@@ -385,8 +393,8 @@ const websiteController = {
                         budget: finalBudget ? Number(finalBudget) : lead.budget,
                         notes: (lead.notes || '') + `\n[Update] Re-engaged via Website: ${website.name}.${emailChanged ? ` (New email used: ${finalEmail})` : ''}`,
                         updatedAt: new Date(),
-                        propertyId: propertyId || lead.propertyId,
-                        unitId: unitId || lead.unitId,
+                        propertyId: safePropertyId || lead.propertyId,
+                        unitId: safeUnitId || lead.unitId,
                         // Persist visitorId if it matches but was missing from DB
                         ...(visitorId && !lead.visitorId ? { visitorId } : {}),
                         // Update basic info if they were provided and different
@@ -406,8 +414,8 @@ const websiteController = {
                         source: sourceId,
                         notes: notes || (isBooking ? 'Booking request captured from website.' : `Lead captured from website: ${website.name}`),
                         tenantId: website.tenantId,
-                        propertyId: propertyId || website.propertyId,
-                        unitId: unitId || null,
+                        propertyId: safePropertyId || website.propertyId,
+                        unitId: safeUnitId || null,
                         status: 1,
                         preferences: isBooking ? { tags: ['Booking'] } : {}
                     }
@@ -433,8 +441,8 @@ const websiteController = {
                         type: interactionType,
                         metadata: {
                             notes: `Lead engaged via website recorded as ${interactionType}`,
-                            propertyId: propertyId || lead.propertyId,
-                            unitId: unitId || null,
+                            propertyId: safePropertyId || lead.propertyId,
+                            unitId: safeUnitId || null,
                             websiteId: website.id,
                             isBooking,
                             startAt,
@@ -462,8 +470,8 @@ const websiteController = {
                     await tx.booking.create({
                         data: {
                             tenantId: website.tenantId,
-                            propertyId: propertyId || lead.propertyId || null,
-                            unitId: unitId || lead.unitId || null,
+                            propertyId: safePropertyId || lead.propertyId || null,
+                            unitId: safeUnitId || lead.unitId || null,
                             leadId: lead.id,
                             guestName: lead.name,
                             guestEmail: lead.email,

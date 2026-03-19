@@ -170,6 +170,71 @@ const popupController = {
             console.error('Error fetching public popups:', error);
             res.status(500).json({ success: false, message: 'Error loading popups.' });
         }
+    },
+
+    // Get popup submissions (Audience)
+    getPopupSubmissions: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { tenantId: queryTenantId } = req.query;
+            const isAdmin = req.user.role === 2;
+            const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+
+            if (!tenantId) {
+                return res.status(400).json({ success: false, message: 'Tenant context required' });
+            }
+
+            // Find interactions for this popup
+            const submissions = await prisma.leadInteraction.findMany({
+                where: {
+                    tenantId,
+                    type: 'POPUP_SUBMIT',
+                    metadata: {
+                        path: ['popupId'],
+                        equals: id
+                    }
+                },
+                include: {
+                    lead: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone: true,
+                            status: true,
+                            source: true,
+                            createdAt: true
+                        }
+                    }
+                },
+                orderBy: { occurredAt: 'desc' }
+            });
+
+            // Also get some basic metrics: Views
+            const viewCount = await prisma.leadInteraction.count({
+                where: {
+                    tenantId,
+                    type: 'POPUP_VIEW',
+                    metadata: {
+                        path: ['popupId'],
+                        equals: id
+                    }
+                }
+            });
+
+            res.json({
+                success: true,
+                data: submissions,
+                metrics: {
+                    views: viewCount,
+                    submissions: submissions.length,
+                    conversionRate: viewCount > 0 ? (submissions.length / viewCount * 100).toFixed(2) : 0
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching popup submissions:', error);
+            res.status(500).json({ success: false, message: 'Server error fetching submissions.' });
+        }
     }
 };
 

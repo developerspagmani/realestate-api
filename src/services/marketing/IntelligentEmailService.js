@@ -158,9 +158,14 @@ class IntelligentEmailService {
             // Fetch tenant info for branding and settings
             const tenant = await prisma.tenant.findUnique({
                 where: { id: tenantId },
-                select: { name: true, domain: true, settings: true }
+                include: {
+                    tenantModules: {
+                        where: { module: { slug: 'marketing_hub' } }
+                    }
+                }
             });
 
+            const emailConfig = tenant.tenantModules[0]?.settings?.emailConfig || {};
             const currencySymbol = tenant.settings?.currencySymbol || '$';
 
             // Send Email
@@ -168,7 +173,12 @@ class IntelligentEmailService {
                 lead.email,
                 lead.name,
                 finalMix,
-                { name: tenant.name, customDomain: tenant.domain, currencySymbol }
+                { 
+                    name: tenant.name, 
+                    customDomain: tenant.domain, 
+                    currencySymbol,
+                    ...emailConfig
+                }
             );
 
             if (emailSent) {

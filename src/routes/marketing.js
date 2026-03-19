@@ -12,7 +12,9 @@ const {
     createTemplate,
     updateTemplate,
     deleteTemplate,
-    sendTestEmail
+    sendTestEmail,
+    getEmailSettings,
+    saveEmailSettings
 } = require('../controllers/templateController');
 const {
     getAllWorkflows,
@@ -64,6 +66,8 @@ router.post('/templates', createTemplate);
 router.put('/templates/:id', updateTemplate);
 router.delete('/templates/:id', deleteTemplate);
 router.post('/templates/test', sendTestEmail);
+router.get('/settings/email', getEmailSettings);
+router.post('/settings/email', saveEmailSettings);
 
 // Workflow Routes
 router.get('/workflows', getAllWorkflows);

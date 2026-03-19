@@ -15,6 +15,7 @@ const moduleCheck = checkModule('website_cms');
 router.get('/', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.getPopups);
 router.post('/', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.createPopup);
 router.get('/:id', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.getPopupById);
+router.get('/:id/submissions', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.getPopupSubmissions);
 router.put('/:id', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.updatePopup);
 router.delete('/:id', authorize('ADMIN', 'OWNER'), moduleCheck, popupController.deletePopup);
 

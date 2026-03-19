@@ -59,7 +59,9 @@ const createScheduledPost = async (req, res) => {
                 targetAudience: targetAudience || null
             },
             include: {
-                property: true,
+                property: {
+                    select: { id: true, title: true }
+                },
                 user: {
                     select: { id: true, name: true, email: true }
                 }
@@ -149,7 +151,9 @@ const createDraft = async (req, res) => {
                 targetAudience: targetAudience || null
             },
             include: {
-                property: true
+                property: {
+                    select: { id: true, title: true }
+                }
             }
         });
 
@@ -201,12 +205,26 @@ const getScheduledPosts = async (req, res) => {
         const [posts, total] = await Promise.all([
             prisma.scheduledPost.findMany({
                 where,
-                include: {
-                    property: true,
+                select: {
+                    id: true,
+                    title: true,
+                    description: true,
+                    status: true,
+                    platforms: true,
+                    scheduledDate: true,
+                    scheduledTime: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    mediaUrls: true,
+                    property: {
+                        select: { id: true, title: true }
+                    },
                     user: {
                         select: { id: true, name: true, email: true }
                     },
-                    publishedPosts: true
+                    publishedPosts: {
+                        select: { id: true, status: true, platform: true, postUrl: true }
+                    }
                 },
                 orderBy: { scheduledDate: 'asc' },
                 skip,
@@ -254,8 +272,19 @@ const getDrafts = async (req, res) => {
                     userId,
                     status: 'DRAFT'
                 },
-                include: {
-                    property: true
+                select: {
+                    id: true,
+                    title: true,
+                    description: true,
+                    status: true,
+                    platforms: true,
+                    scheduledDate: true,
+                    scheduledTime: true,
+                    updatedAt: true,
+                    mediaUrls: true,
+                    property: {
+                        select: { id: true, title: true }
+                    }
                 },
                 orderBy: { updatedAt: 'desc' },
                 skip,
@@ -298,7 +327,9 @@ const getScheduledPostById = async (req, res) => {
         const post = await prisma.scheduledPost.findFirst({
             where: { id, userId, tenantId },
             include: {
-                property: true,
+                property: {
+                    select: { id: true, title: true }
+                },
                 user: {
                     select: { id: true, name: true, email: true }
                 },
@@ -377,7 +408,9 @@ const updateScheduledPost = async (req, res) => {
             where: { id },
             data: updateData,
             include: {
-                property: true,
+                property: {
+                    select: { id: true, title: true }
+                },
                 publishedPosts: true
             }
         });
@@ -512,9 +545,21 @@ const getPostsByProperty = async (req, res) => {
                 userId,
                 propertyId
             },
-            include: {
-                property: true,
-                publishedPosts: true
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                status: true,
+                platforms: true,
+                scheduledDate: true,
+                scheduledTime: true,
+                mediaUrls: true,
+                property: {
+                    select: { id: true, title: true }
+                },
+                publishedPosts: {
+                    select: { id: true, status: true, platform: true, postUrl: true }
+                }
             },
             orderBy: { scheduledDate: 'desc' }
         });

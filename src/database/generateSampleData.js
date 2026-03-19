@@ -20,6 +20,7 @@ async function generateSampleData() {
     await prisma.whatsAppMessage.deleteMany();
     await prisma.whatsAppCampaign.deleteMany();
     await prisma.whatsAppTemplate.deleteMany();
+    await prisma.whatsAppChatbot.deleteMany();
     await prisma.publishedPost.deleteMany();
     await prisma.scheduledPost.deleteMany();
     await prisma.connectedAccount.deleteMany();
@@ -29,13 +30,17 @@ async function generateSampleData() {
     await prisma.agentProperty.deleteMany();
     await prisma.agent.deleteMany();
     await prisma.leadInteraction.deleteMany();
+    await prisma.leadLossData.deleteMany();
     await prisma.booking.deleteMany();
+    await prisma.task.deleteMany();
     await prisma.lead.deleteMany();
     await prisma.listing.deleteMany();
+    await prisma.portalListing.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.planUpgradeRequest.deleteMany();
     await prisma.integration.deleteMany();
     await prisma.widget.deleteMany();
+    await prisma.websitePopup.deleteMany();
     await prisma.page.deleteMany();
     await prisma.website.deleteMany();
     await prisma.media.deleteMany();
@@ -53,9 +58,11 @@ async function generateSampleData() {
     await prisma.tenantModule.deleteMany();
     await prisma.module.deleteMany();
     await prisma.plan.deleteMany();
+    await prisma.partnerProfile.deleteMany();
     await prisma.user.deleteMany();
     await prisma.tenant.deleteMany();
     await prisma.systemSetting.deleteMany();
+    console.log('🧹 Database cleaned (All tables)');
     console.log('🧹 Database cleaned');
 
     // ─── SYSTEM SETTINGS ─────────────────────────────────────────────────────
@@ -222,14 +229,12 @@ async function generateSampleData() {
 
     const reUsers = [], cwUsers = [];
     const reNames = [
-      ['Alice', 'Carter'], ['Bob', 'Mitchell'], ['Charles', 'Newman'],
-      ['Diana', 'Powell'], ['Edward', 'Quinn']
+      ['Alice', 'Carter'], ['Bob', 'Mitchell']
     ];
     const cwNames = [
-      ['Ananya', 'Rao'], ['Bikram', 'Sinha'], ['Charu', 'Mehta'],
-      ['Deepak', 'Joshi'], ['Esha', 'Patel']
+      ['Ananya', 'Rao'], ['Bikram', 'Sinha']
     ];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 2; i++) {
       reUsers.push(await prisma.user.create({
         data: {
           name: `${reNames[i][0]} ${reNames[i][1]}`,
@@ -251,7 +256,7 @@ async function generateSampleData() {
         }
       }));
     }
-    console.log('👤 Users created: 1 Admin, 2 Owners, 10 Sub-users');
+    console.log('👤 Users created: 1 Admin, 2 Owners, 4 Sub-users');
 
     // ─── PROPERTY CATEGORIES ─────────────────────────────────────────────────
     const catResidential = await prisma.propertyCategory.create({
@@ -287,11 +292,8 @@ async function generateSampleData() {
     const rePropData = [
       { title: 'Mayfair Gardens Block A', city: 'London', lat: 51.5109, lng: -0.1491 },
       { title: 'Chelsea Heights Tower', city: 'London', lat: 51.4875, lng: -0.1687 },
-      { title: 'Kensington Court Villas', city: 'London', lat: 51.5016, lng: -0.1942 },
-      { title: 'Canary Wharf Residences', city: 'London', lat: 51.5054, lng: -0.0235 },
-      { title: 'Richmond Green Estates', city: 'Richmond', lat: 51.4613, lng: -0.3037 },
     ];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 2; i++) {
       const pd = rePropData[i];
       const prop = await prisma.property.create({
         data: {
@@ -398,16 +400,14 @@ async function generateSampleData() {
         }
       });
     }
-    console.log('🏘️ RE Properties (5) + Units (10) + Listings created');
+    console.log('🏡 RE Properties (2) + Units (4) + Listings created');
 
     // ─── CW PROPERTIES + UNITS ────────────────────────────────────────────────
     const cwProps = [], cwUnits = [];
     const cwPropData = [
       { title: 'Innovation Hub Alpha', city: 'Bangalore' },
-      { title: 'StartupNest Koramangala', city: 'Bangalore' },
-      { title: 'TechPark Whitefield', city: 'Bangalore' },
     ];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 1; i++) {
       const pd = cwPropData[i];
       const prop = await prisma.property.create({
         data: {
@@ -477,7 +477,7 @@ async function generateSampleData() {
         }
       });
     }
-    console.log('🖥️ CW Properties (3) + Units (9) created');
+    console.log('🖥️ CW Properties (1) + Units (3) created');
 
     // ─── AGENTS ───────────────────────────────────────────────────────────────
     const agentUsers = [reUsers[0], reUsers[1]];
@@ -492,11 +492,12 @@ async function generateSampleData() {
         }
       });
       agents.push(agent);
-      for (let p = 0; p < 3; p++) {
+      // Assign both properties to each agent for testing
+      for (let p = 0; p < 2; p++) {
         await prisma.agentProperty.create({
           data: {
-            agentId: agent.id, propertyId: reProps[p + i].id,
-            commissionRate: 3.5, isPrimary: p === 0, status: 1
+            agentId: agent.id, propertyId: reProps[p].id,
+            commissionRate: 3.5, isPrimary: p === i, status: 1
           }
         });
       }
@@ -504,12 +505,12 @@ async function generateSampleData() {
 
     // ─── LEADS ────────────────────────────────────────────────────────────────
     const reLeads = [], cwLeads = [];
-    const sources = [1, 2, 4, 5, 7];
-    const leadNames = ['Oliver Brown', 'Sophia Davis', 'Harry Wilson', 'Emma Jones', 'Noah Taylor'];
-    for (let i = 0; i < 5; i++) {
+    const sources = [1, 2];
+    const leadNames = ['Oliver Brown', 'Sophia Davis'];
+    for (let i = 0; i < 2; i++) {
       const lead = await prisma.lead.create({
         data: {
-          tenantId: tenantRE.id, propertyId: reProps[i % 5].id, unitId: reUnits[i * 2].id,
+          tenantId: tenantRE.id, propertyId: reProps[i % 2].id, unitId: reUnits[i * 2].id,
           name: leadNames[i], email: `${leadNames[i].split(' ')[0].toLowerCase()}@prospects.co`,
           phone: `+4477000000${10 + i}`, source: sources[i], status: (i % 5) + 1,
           priority: (i % 3) + 1, budget: 150000 + i * 50000,
@@ -530,16 +531,16 @@ async function generateSampleData() {
           data: {
             tenantId: tenantRE.id, leadId: lead.id,
             type: ['PROPERTY_VIEW', 'EMAIL_OPEN', 'FORM_SUBMIT'][j],
-            metadata: { propertyId: reProps[i % 5].id },
+            metadata: { propertyId: reProps[i % 2].id },
             scoreWeight: [5, 3, 10][j]
           }
         });
       }
     }
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const lead = await prisma.lead.create({
         data: {
-          tenantId: tenantCW.id, propertyId: cwProps[i].id,
+          tenantId: tenantCW.id, propertyId: cwProps[0].id,
           name: cwNames[i].join(' '), email: `${cwNames[i][0].toLowerCase()}@startup.io`,
           phone: `+9190000000${10 + i}`, source: 1, status: i + 1,
           budget: 8000 + i * 2000, leadScore: 30 + i * 10,
@@ -548,32 +549,32 @@ async function generateSampleData() {
       });
       cwLeads.push(lead);
     }
-    console.log('📋 Leads created (5 RE + 3 CW) with interactions and agent assignments');
+    console.log('📋 Leads created (2 RE + 2 CW) with interactions and agent assignments');
 
     // ─── BOOKINGS + PAYMENTS + COMMISSIONS ────────────────────────────────────
     const bookings = [];
     const now = new Date();
-    for (let i = 0; i < 5; i++) {
-      const isRE = i < 3;
+    for (let i = 0; i < 2; i++) {
+      const isRE = i < 1;
       const tenant = isRE ? tenantRE : tenantCW;
-      const unit = isRE ? reUnits[i * 2] : cwUnits[i - 3];
-      const prop = isRE ? reProps[i] : cwProps[i - 3];
-      const user = isRE ? reUsers[i] : cwUsers[i - 3];
-      const lead = isRE ? reLeads[i] : cwLeads[i - 3];
-      const statusVal = [2, 4, 2, 3, 4][i];
-      const totalPrice = isRE ? 2500 + i * 300 : 1500 + i * 100;
+      const unit = isRE ? reUnits[0] : cwUnits[0];
+      const prop = isRE ? reProps[0] : cwProps[0];
+      const user = isRE ? reUsers[0] : cwUsers[0];
+      const lead = isRE ? reLeads[0] : cwLeads[0];
+      const statusVal = [2, 4][i];
+      const totalPrice = isRE ? 2500 : 1500;
 
       const booking = await prisma.booking.create({
         data: {
           tenantId: tenant.id, propertyId: prop.id, unitId: unit.id,
           userId: user.id, leadId: lead.id,
-          agentId: isRE ? agents[i % 2].id : null,
+          agentId: isRE ? agents[0].id : null,
           guestName: user.name, guestEmail: user.email, guestPhone: user.phone,
           startAt: new Date(now.getTime() + i * 7 * 86400000),
           endAt: new Date(now.getTime() + (i + 1) * 7 * 86400000),
           status: statusVal, totalPrice, paymentStatus: 2,
           notes: `Booking ${i + 1} — all requirements confirmed.`,
-          specialRequests: i % 2 === 0 ? 'Late check-in requested' : null
+          specialRequests: i === 0 ? 'Late check-in requested' : null
         }
       });
       bookings.push(booking);
@@ -582,7 +583,7 @@ async function generateSampleData() {
         data: {
           tenantId: tenant.id, bookingId: booking.id, userId: user.id,
           amount: totalPrice, currency: isRE ? 'GBP' : 'INR',
-          status: 'COMPLETED', paymentMethod: ['Credit Card', 'UPI', 'Bank Transfer'][i % 3],
+          status: 'COMPLETED', paymentMethod: ['Credit Card', 'UPI'][i % 2],
           transactionId: `TXN-${uuidv4().slice(0, 12).toUpperCase()}`
         }
       });
@@ -590,13 +591,13 @@ async function generateSampleData() {
       if (isRE) {
         await prisma.commission.create({
           data: {
-            tenantId: tenantRE.id, agentId: agents[i % 2].id, bookingId: booking.id,
+            tenantId: tenantRE.id, agentId: agents[0].id, bookingId: booking.id,
             amount: totalPrice * 0.035, rateSnapshot: 3.5, status: 'PAID'
           }
         });
       }
     }
-    console.log('📅 Bookings (5), Payments, Commissions created');
+    console.log('📅 Bookings (2), Payments, Commissions created');
 
     // ─── WIDGETS ─────────────────────────────────────────────────────────────
     await prisma.widget.create({
@@ -728,7 +729,7 @@ async function generateSampleData() {
       }
     });
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const enrollment = await prisma.workflowEnrollment.create({
         data: {
           workflowId: workflow.id, leadId: reLeads[i].id,
@@ -867,7 +868,7 @@ async function generateSampleData() {
       }
     });
 
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       await prisma.whatsAppMessage.create({
         data: {
           tenantId: tenantRE.id, businessId: 'WABA_123456789',

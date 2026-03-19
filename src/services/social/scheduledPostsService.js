@@ -847,6 +847,16 @@ class ScheduledPostsService {
             throw error;
         }
     }
+
+    /**
+     * Wrapper for ConnectedAccountsService.syncAccountData
+     * This allows on-the-fly self-healing for accounts with missing metadata during publish
+     */
+    async syncAccountData(accountId, userId, tenantId) {
+        const ConnectedAccountsService = require('./connectedAccountsService');
+        const connectedAccountsService = new ConnectedAccountsService();
+        return await connectedAccountsService.syncAccountData(accountId, userId, tenantId);
+    }
 }
 
 module.exports = ScheduledPostsService;

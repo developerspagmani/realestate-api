@@ -46,6 +46,7 @@ const socialRoutes = require('./routes/social');
 const cronRoutes = require('./routes/cronRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const popupRoutes = require('./routes/popups');
+const partnerRoutes = require('./routes/partnerRoutes');
 
 
 
@@ -123,6 +124,8 @@ const { tenantMiddleware } = require('./controllers/tenantController');
 
 // Routes - All enabled for testing
 app.use('/api/auth', authRoutes);
+app.use('/api/popups', popupRoutes);
+app.use('/api/popup', popupRoutes);
 
 app.use(tenantMiddleware);
 app.use('/api/users', userRoutes);
@@ -151,11 +154,12 @@ app.use('/api/cms', cmsRoutes);
 app.use('/api/upgrade-requests', upgradeRequestsRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/social', socialRoutes);
+app.use('/api/partners', partnerRoutes);
 
 // Vercel Serverless Cron Jobs
 app.use('/api/crons', cronRoutes);
 app.use('/api/tasks', taskRoutes);
-app.use('/api/popups', popupRoutes);
+
 
 
 
