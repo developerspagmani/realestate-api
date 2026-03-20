@@ -3,18 +3,24 @@ const { prisma } = require('../config/database');
 // Interaction scoring rules
 const SCORING_RULES = {
     'EMAIL_OPEN': 1,
-    'EMAIL_CLICK': 3,
-    'PROPERTY_VIEW': 5,
-    'UNIT_VIEW': 5,
-    'FORM_SUBMIT': 20,
-    'CHAT_INIT': 10,
+    'EMAIL_CLICK': 5,
+    'WIDGET_VIEW': 1,
+    'PROPERTY_VIEW': 2,
+    'UNIT_VIEW': 2,
+    'FORM_INIT': 10,
+    'FORM_SUBMIT': 35,
+    'CHAT_INIT': 5,
+    'CHAT_START_CONVERSATION': 20,
     'CHAT_CHOICE': 5,
-    'BOOKING_REQUEST': 30,
+    'BOOKING_STEP_START': 15,
+    'BOOKING_REQUEST': 50,
     'UNIT_BOOKING_START': 5,
-    'WEBSITE_INQUIRY': 20,
-    'POPUP_VIEW': 2,
+    'WEBSITE_INQUIRY': 30,
+    'POPUP_VIEW': 1,
     'POPUP_CLICK': 10,
-    'POPUP_SUBMIT': 30
+    'POPUP_SUBMIT': 40,
+    'BROCHURE_DOWNLOAD': 20,
+    'FLOOR_PLAN_VIEW': 10
 };
 
 /**
@@ -58,24 +64,57 @@ const trackInteraction = async (req, res) => {
             });
         }
 
-        // If lead not found and we have visitorId + tenantId, create an anonymous lead
-        if (!lead && visitorId && tenantId && isUuid(tenantId)) {
-            lead = await prisma.lead.create({
-                data: {
-                    visitorId,
-                    tenantId,
-                    name: 'Anonymous Visitor',
-                    status: 1, // Active
-                    source: 5 // Widget/Public
-                }
+        // If lead not found, we discard the interaction to keep CRM clean (per user request)
+        if (!lead) {
+            return res.status(200).json({ 
+                success: true, 
+                message: 'Interaction skipped: No lead found and anonymous creation is disabled to prevent CRM clutter.' 
             });
         }
 
-        if (!lead) {
-            return res.status(404).json({ success: false, message: 'Lead not found and cannot be identified/created in current context' });
+        let scoreWeight = SCORING_RULES[type] || 0;
+        
+        // Behavioral Logic: Diminishing returns for repeated passive views
+        if (['PROPERTY_VIEW', 'UNIT_VIEW', 'WIDGET_VIEW', 'POPUP_VIEW'].includes(type)) {
+            const windowStart = new Date(Date.now() - 12 * 60 * 60 * 1000); // 12h window
+            
+            // Look for any similar interaction in that window
+            const previousInteraction = await prisma.leadInteraction.findFirst({
+                where: {
+                    leadId: lead.id,
+                    type,
+                    occurredAt: { gte: windowStart }
+                },
+                select: { id: true, metadata: true }
+            });
+
+            if (previousInteraction) {
+                // If it's the exact same property, award almost 0 (10%)
+                const isSameProperty = metadata?.propertyId && previousInteraction.metadata?.propertyId === metadata.propertyId;
+                scoreWeight = isSameProperty ? 0 : Math.ceil(scoreWeight * 0.5); 
+            }
         }
 
-        const scoreWeight = SCORING_RULES[type] || 0;
+        // Behavioral Logic: Multi-stage Intent (e.g. starting a form is good, but doing it 5 times today is spam)
+        if (['FORM_INIT', 'BOOKING_STEP_START', 'CHAT_INIT', 'BROCHURE_DOWNLOAD'].includes(type)) {
+             const recentlyDone = await prisma.leadInteraction.findFirst({
+                where: {
+                    leadId: lead.id,
+                    type,
+                    occurredAt: { gte: new Date(Date.now() - 4 * 60 * 60 * 1000) } // 4h window
+                },
+                select: { id: true }
+            });
+            if (recentlyDone) scoreWeight = Math.ceil(scoreWeight * 0.1); // Drastic reduction for redundancy
+        }
+
+        // High Probability: Only award full points for FORM_SUBMIT once per 24h per lead
+        if (type === 'FORM_SUBMIT') {
+            const alreadySubmitted = await prisma.leadInteraction.findFirst({
+                where: { leadId: lead.id, type: 'FORM_SUBMIT', occurredAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
+            });
+            if (alreadySubmitted) scoreWeight = 5; // Maintenance points only
+        }
 
         // Start transaction to log interaction and update lead score
         const result = await prisma.$transaction(async (tx) => {
