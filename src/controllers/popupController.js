@@ -56,9 +56,15 @@ const popupController = {
     // Create a new popup
     createPopup: async (req, res) => {
         try {
-            const { name, websiteId, type, trigger, triggerValue, content, isActive, tenantId: bodyTenantId } = req.body;
+            const { name, websiteId, type, trigger, triggerValue, content, isActive, targetWidgetIds, tenantId: bodyTenantId } = req.body;
             const isAdmin = req.user.role === 2;
             const finalTenantId = (isAdmin && bodyTenantId) ? bodyTenantId : (req.tenant?.id || req.user?.tenantId);
+
+            // Ensure targetWidgetIds is persisted inside content if provided at top level
+            const finalContent = content || {};
+            if (targetWidgetIds !== undefined) {
+                finalContent.targetWidgetIds = targetWidgetIds;
+            }
 
             if (!websiteId) {
                 return res.status(400).json({ success: false, message: 'Website ID is required.' });
@@ -71,7 +77,7 @@ const popupController = {
                     type,
                     trigger,
                     triggerValue: triggerValue || null,
-                    content: content || {},
+                    content: finalContent,
                     isActive: isActive !== undefined ? isActive : true,
                     tenantId: finalTenantId
                 }
@@ -88,7 +94,7 @@ const popupController = {
     updatePopup: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, websiteId, type, trigger, triggerValue, content, isActive, tenantId: bodyTenantId } = req.body;
+            const { name, websiteId, type, trigger, triggerValue, content, isActive, targetWidgetIds, tenantId: bodyTenantId } = req.body;
             const { tenantId: queryTenantId } = req.query;
             const isAdmin = req.user.role === 2;
 
@@ -105,6 +111,19 @@ const popupController = {
             if (triggerValue !== undefined) updateData.triggerValue = triggerValue;
             if (content !== undefined) updateData.content = content;
             if (isActive !== undefined) updateData.isActive = isActive;
+
+            // Handle syncing targetWidgetIds to content field
+            if (targetWidgetIds !== undefined) {
+                if (!updateData.content) {
+                    // Fetch existing content if not being updated directly
+                    const existing = await prisma.websitePopup.findUnique({ where: { id }, select: { content: true } });
+                    updateData.content = existing?.content || {};
+                }
+                updateData.content = {
+                    ...updateData.content,
+                    targetWidgetIds
+                };
+            }
 
             const popup = await prisma.websitePopup.updateMany({
                 where,
@@ -153,13 +172,43 @@ const popupController = {
     // Public: Get active popups for a website
     getPublicPopups: async (req, res) => {
         try {
-            const { websiteId } = req.params;
+            const { websiteId, widgetId } = req.params;
+
+            const where = {
+                isActive: true
+            };
+
+            if (widgetId && widgetId !== 'none' && widgetId !== 'undefined') {
+                // IMPORTANT: widgetId in URL is the widget's uniqueId string, but targetWidgetIds stores the internal DB UUID
+                const widget = await prisma.widget.findUnique({
+                    where: { uniqueId: widgetId },
+                    select: { id: true }
+                });
+
+                if (widget) {
+                    where.content = {
+                        path: ['targetWidgetIds'],
+                        array_contains: widget.id
+                    };
+                } else {
+                    // If widget NOT found by uniqueId, try by internal ID just in case
+                    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+                    if (uuidRegex.test(widgetId)) {
+                        where.content = {
+                            path: ['targetWidgetIds'],
+                            array_contains: widgetId
+                        };
+                    } else {
+                        return res.json({ success: true, data: [] });
+                    }
+                }
+            } else if (websiteId && websiteId !== 'none' && websiteId !== 'all' && websiteId !== 'undefined') {
+                // If fetching for a specific website
+                where.websiteId = websiteId;
+            }
 
             const popups = await prisma.websitePopup.findMany({
-                where: {
-                    websiteId,
-                    isActive: true
-                }
+                where
             });
 
             res.json({

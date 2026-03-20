@@ -3,8 +3,9 @@ const router = express.Router();
 const popupController = require('../controllers/popupController');
 const { auth, authorize, checkModule } = require('../middleware/auth');
 
-// Public route to fetch popups for a website
+// Public routes
 router.get('/public/:websiteId', popupController.getPublicPopups);
+router.get('/public/widget/:widgetId', popupController.getPublicPopups);
 
 // Protected routes
 router.use(auth);

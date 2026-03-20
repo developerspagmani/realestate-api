@@ -228,7 +228,7 @@ const automationController = {
             const tenantId = req.body.tenantId || req.user?.tenantId;
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant ID required' });
 
-            const { name, trigger, channel, description, type } = req.body;
+            const { name, trigger, channel, description, type, steps } = req.body;
             const actualChannel = channel || type;
 
             const workflow = await prisma.marketingWorkflow.create({
@@ -237,7 +237,7 @@ const automationController = {
                     name,
                     description,
                     trigger: { type: trigger, channel: actualChannel },
-                    steps: [], // Default empty steps for matching engine
+                    steps: steps || [],
                     status: 1, // Active
                 }
             });
@@ -255,7 +255,7 @@ const automationController = {
     updateWorkflow: async (req, res) => {
         try {
             const { id } = req.params;
-            const { name, trigger, status, channel, description, type } = req.body;
+            const { name, trigger, status, channel, description, type, steps } = req.body;
             const actualChannel = channel || type;
 
             const workflow = await prisma.marketingWorkflow.update({
@@ -264,6 +264,7 @@ const automationController = {
                     name,
                     description,
                     trigger: trigger ? { type: trigger, channel: actualChannel } : undefined,
+                    steps: steps || undefined,
                     ...(status && { status: status === 'Active' || status === 1 ? 1 : 2 })
                 }
             });
