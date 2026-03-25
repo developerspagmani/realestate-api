@@ -84,7 +84,8 @@ const getDashboardStats = async (req, res) => {
       totalLeads,
       recentLeads,
       recentProperties,
-      upcomingTasks
+      upcomingTasks,
+      leadSourceStatsRaw
     ] = await Promise.all([
       prisma.property.count({
         where: {
@@ -201,6 +202,14 @@ const getDashboardStats = async (req, res) => {
           lead: { select: { name: true } },
           agent: { include: { user: { select: { name: true } } } }
         }
+      }),
+      prisma.lead.groupBy({
+        by: ['source'],
+        where: {
+          ...finalWhereBase,
+          ...leadOwnerFilter
+        },
+        _count: { id: true }
       })
     ]);
 
@@ -363,6 +372,10 @@ const getDashboardStats = async (req, res) => {
         upcomingTasks,
         topWorkspaces: topWorkspaceDetails || [],
         historicalData,
+        leadSourceStats: (leadSourceStatsRaw || []).map(s => ({
+          source: { 1: 'Website', 2: 'Email', 3: 'Phone', 4: 'Social', 5: 'Referral', 6: 'Other', 7: 'Chatbot', 8: 'Popup' }[s.source] || 'Direct',
+          count: s._count.id
+        })),
         periodLabel
       }
     });

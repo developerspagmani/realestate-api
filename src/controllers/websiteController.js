@@ -202,17 +202,13 @@ const websiteController = {
             }
 
             const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
-            const rawPropertyIds = website.propertyIds && website.propertyIds.length > 0
-                ? website.propertyIds
-                : (website.propertyId ? [website.propertyId] : null);
-
+            const rawPropertyIds = website.propertyIds && website.propertyIds.length > 0 ? website.propertyIds : null;
             const propertyIds = rawPropertyIds ? rawPropertyIds.filter(id => uuidRegex.test(id)) : null;
 
             const properties = await prisma.property.findMany({
                 where: {
                     tenantId: website.tenantId,
-                    status: 1,
-                    ...(propertyIds && propertyIds.length > 0 ? { id: { in: propertyIds } } : {})
+                    status: 1
                 },
                 include: {
                     mainImage: true,
@@ -233,7 +229,7 @@ const websiteController = {
                         }
                     }
                 },
-                take: 50
+                take: 100
             });
 
             // PERF-FIX: Resolve gallery media IDs to objects (matching publicController behavior)
@@ -378,7 +374,8 @@ const websiteController = {
             let sourceId = Number(source);
             if (isNaN(sourceId)) {
                 if (source === 'website_chatbot') sourceId = 7;
-                else sourceId = 8; // Default to Website
+                else if (source === 'website_popup' || source === 'popup_cta') sourceId = 8;
+                else sourceId = 1; // Default to Website (1) instead of 8 (Marketing)
             }
 
             if (lead) {

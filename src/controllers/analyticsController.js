@@ -197,7 +197,7 @@ const analyticsController = {
 
             const sourceLabels = {
                 1: 'Website', 2: 'Email', 3: 'Phone', 4: 'Social',
-                5: 'Referral', 6: 'Other', 7: 'Chatbot'
+                5: 'Referral', 6: 'Other', 7: 'Chatbot', 8: 'Popup'
             };
 
             const leadSources = sourceCounts.map(s => ({
