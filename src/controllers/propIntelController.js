@@ -1,5 +1,7 @@
 const { prisma } = require('../config/database');
 const { PropertyStatus, BookingStatus } = require('../constants');
+const { checkTenantId } = require('../utils/tenantHelper');
+
 
 /**
  * PropIntel AI Controller
@@ -12,10 +14,9 @@ module.exports = {
      */
     getDiagnostics: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId;
-            if (!tenantId) {
-                return res.status(400).json({ success: false, message: 'Tenant context required' });
-            }
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             // Fetch all properties for this tenant
             const properties = await prisma.property.findMany({
@@ -84,7 +85,9 @@ module.exports = {
      */
     getPMFAnalysis: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             const properties = await prisma.property.findMany({
                 where: { tenantId, status: PropertyStatus.ACTIVE },
@@ -123,7 +126,9 @@ module.exports = {
      */
     getSuggestions: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             const properties = await prisma.property.findMany({
                 where: { tenantId, status: PropertyStatus.ACTIVE },

@@ -1,13 +1,13 @@
 const { prisma } = require('../config/database');
+const { checkTenantId, getTenantId } = require('../utils/tenantHelper');
 
 const analyticsController = {
     // 1. Revenue & Lead Funnel report
     getRevenueAndLeads: async (req, res) => {
         try {
-            const { tenantId: queryTenantId } = req.query;
-            const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
 
-            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant ID required' });
 
             // Revenue over time (last 6 months)
             const months = [];
@@ -68,8 +68,9 @@ const analyticsController = {
     // 2. Agent Efficiency
     getAgentPerformance: async (req, res) => {
         try {
-            const { tenantId: queryTenantId } = req.query;
-            const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             const agents = await prisma.agent.findMany({
                 where: { tenantId },
@@ -124,8 +125,9 @@ const analyticsController = {
     // 4. Campaign Performance
     getCampaignPerformance: async (req, res) => {
         try {
-            const { tenantId: queryTenantId } = req.query;
-            const tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             const campaigns = await prisma.campaign.findMany({
                 where: { tenantId },
@@ -163,12 +165,9 @@ const analyticsController = {
     // 5. Marketing Insights (Top 5 GA-style reports)
     getMarketingInsights: async (req, res) => {
         try {
-            const { tenantId: queryTenantId, startDate, endDate, campaignId, propertyId } = req.query;
-            let tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
-
-            if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
-                return res.status(400).json({ success: false, message: 'Valid Tenant ID required' });
-            }
+            const { startDate, endDate, campaignId, propertyId } = req.query;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
 
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
             if (!isUuid) {
@@ -546,12 +545,10 @@ const analyticsController = {
     // 6. Demand Intelligence — keywords, features, price gaps, shortages
     getDemandIntelligence: async (req, res) => {
         try {
-            const { tenantId: queryTenantId, startDate, endDate } = req.query;
-            let tenantId = queryTenantId || req.tenant?.id || req.user?.tenantId;
+            const { startDate, endDate } = req.query;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
 
-            if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
-                return res.status(400).json({ success: false, message: 'Valid Tenant ID required' });
-            }
             const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId);
             if (!isUuid) return res.status(400).json({ success: false, message: 'Invalid Tenant ID format' });
 

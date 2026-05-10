@@ -72,6 +72,8 @@ model Tenant {
   referredById          String?              @map("referred_by_id") @db.Uuid
   referredBy            User?                 @relation("TenantReferrer", fields: [referredById], references: [id])
 
+  @@index([type])
+  @@index([status])
   @@map("tenants")
 }
 
@@ -260,6 +262,12 @@ model Property {
   @@index([status])
   @@index([propertyType])
   @@index([city])
+  @@index([locality])
+  @@index([neighborhood])
+  @@index([title])
+  @@index([listingType])
+  @@index([price])
+  @@index([createdAt])
   @@map("properties")
 }
 
@@ -366,6 +374,8 @@ model Amenity {
   propertyAmenities PropertyAmenity[]
   unitAmenities     UnitAmenity[]
 
+  @@index([tenantId])
+  @@index([status])
   @@map("amenities")
 }
 
@@ -610,6 +620,9 @@ model Media {
   unitMainImages     Unit[]     @relation("UnitMainImage")
 
   @@index([tenantId])
+  @@index([userId])
+  @@index([type])
+  @@index([category])
   @@map("media")
 }
 

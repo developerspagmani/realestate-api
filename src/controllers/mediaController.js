@@ -58,12 +58,21 @@ const getAllMedia = async (req, res) => {
     const [media, total] = await Promise.all([
       prisma.media.findMany({
         where,
-        include: {
-          user: { // Changed from uploadedByUser to user
+        select: {
+          id: true,
+          url: true,
+          filename: true,
+          originalName: true,
+          mimeType: true,
+          size: true,
+          type: true,
+          category: true,
+          alt: true,
+          createdAt: true,
+          user: {
             select: {
               id: true,
               name: true,
-              email: true,
             }
           }
         },

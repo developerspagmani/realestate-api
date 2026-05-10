@@ -1,5 +1,4 @@
 const { prisma } = require('../config/database');
-const leadNurtureService = require('../services/social/leadNurtureService');
 
 // Create property
 const createProperty = async (req, res) => {
@@ -176,10 +175,6 @@ const createProperty = async (req, res) => {
       return property;
     });
 
-    // Trigger proactive matching in background
-    leadNurtureService.findMatchesForNewProperty(result.id).catch(err => {
-      console.error('Error triggering matching engine:', err);
-    });
 
     res.status(201).json({
       success: true,
@@ -263,8 +258,34 @@ const getProperties = async (req, res) => {
     const [properties, total] = await Promise.all([
       prisma.property.findMany({
         where,
-        include: {
-          mainImage: true,
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          propertyType: true,
+          listingType: true,
+          status: true,
+          city: true,
+          state: true,
+          area: true,
+          bedrooms: true,
+          bathrooms: true,
+          addressLine1: true,
+          locality: true,
+          createdAt: true,
+          mainImage: {
+            select: {
+              id: true,
+              url: true,
+              alt: true
+            }
+          },
+          category: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
           propertyAmenities: {
             include: {
               amenity: true

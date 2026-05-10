@@ -25,7 +25,6 @@ const paymentRoutes = require('./routes/payments');
 const leadsRoutes = require('./routes/leads');
 const mediaRoutes = require('./routes/media');
 const campaignRoutes = require('./routes/campaigns');
-const socialPostsRoutes = require('./routes/socialPosts');
 const tenantRoutes = require('./routes/tenants');
 const propertyRoutes = require('./routes/properties');
 const unitRoutes = require('./routes/units');
@@ -42,7 +41,6 @@ const licenseKeyRoutes = require('./routes/licenseKeys');
 const cmsRoutes = require('./routes/cmsRoutes');
 const upgradeRequestsRoutes = require('./routes/upgradeRequests');
 const integrationRoutes = require('./routes/integrations');
-const socialRoutes = require('./routes/social');
 const cronRoutes = require('./routes/cronRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const popupRoutes = require('./routes/popups');
@@ -77,8 +75,7 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "https://app.virpanix.com",
-  "https://app-dev.virpanix.com",
-  "https://dev.virpanix.com"
+  "https://localhost:3000"
 ].filter(Boolean);
 
 app.use(cors({
@@ -131,7 +128,6 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/leads', leadsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/campaigns', campaignRoutes);
-app.use('/api/social-posts', socialPostsRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/units', unitRoutes);
@@ -148,7 +144,6 @@ app.use('/api/license-keys', licenseKeyRoutes);
 app.use('/api/cms', cmsRoutes);
 app.use('/api/upgrade-requests', upgradeRequestsRoutes);
 app.use('/api/integrations', integrationRoutes);
-app.use('/api/social', socialRoutes);
 app.use('/api/partners', partnerRoutes);
 
 // Vercel Serverless Cron Jobs

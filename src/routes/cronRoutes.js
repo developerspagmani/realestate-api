@@ -1,10 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const cron = require('node-cron');
-const ScheduledPostsService = require('../services/social/scheduledPostsService');
 
 // Instantiate services
-const scheduledPostsService = new ScheduledPostsService();
 
 let isExecuting = false;
 
@@ -22,8 +20,6 @@ const executeCronTasks = async () => {
     try {
         console.log('[Node-Cron] Starting background tasks execution...');
 
-        // 1. Process Social Media Posts
-        await scheduledPostsService.publishScheduledPosts();
 
         // 2. Process Marketing Workflows
         const WorkflowService = require('../services/marketing/WorkflowService');
@@ -37,12 +33,8 @@ const executeCronTasks = async () => {
         const minute = new Date().getMinutes();
         if (minute % 15 === 0) {
             try {
-                // 3a. Sync Social Media Metrics
-                console.log('[Node-Cron] Triggering social metrics sync...');
-                await scheduledPostsService.syncAllRecentPostsMetrics();
 
                 const dealPreventionService = require('../services/dealPreventionService');
-                const leadNurtureService = require('../services/social/leadNurtureService');
 
                 // Get all tenants to scan
                 const { prisma } = require('../config/database');
@@ -50,7 +42,6 @@ const executeCronTasks = async () => {
 
                 for (const tenant of tenants) {
                     await dealPreventionService.scanTenantLeads(tenant.id);
-                    await leadNurtureService.scanForRevivals(tenant.id);
                 }
             } catch (riskError) {
                 console.error('[Node-Cron] Risk scanning failed:', riskError);

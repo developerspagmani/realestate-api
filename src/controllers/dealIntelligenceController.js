@@ -1,14 +1,14 @@
 const { prisma } = require('../config/database');
 const dealPreventionService = require('../services/dealPreventionService');
+const { checkTenantId } = require('../utils/tenantHelper');
+
 
 module.exports = {
     getPreventionInsights: async (req, res) => {
         try {
-            const tenantId = req.user?.tenantId || req.tenant?.id;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
 
-            if (!tenantId) {
-                return res.status(400).json({ success: false, message: 'Tenant ID is required for analytics' });
-            }
 
             const [highRiskLeads, agents] = await Promise.all([
                 prisma.lead.findMany({
@@ -94,7 +94,9 @@ module.exports = {
 
     getLostDealsIntelligence: async (req, res) => {
         try {
-            const tenantId = req.user.tenantId;
+            const tenantId = checkTenantId(req, res);
+            if (!tenantId) return;
+
 
             const [totalLost, lossDataRaw, employeeData, topProjects] = await Promise.all([
                 prisma.leadLossData.count({ where: { tenantId } }),

@@ -17,13 +17,6 @@ async function generateSampleData() {
     await prisma.audienceGroup.deleteMany();
     await prisma.emailTemplate.deleteMany();
     await prisma.formBuilder.deleteMany();
-    await prisma.whatsAppMessage.deleteMany();
-    await prisma.whatsAppCampaign.deleteMany();
-    await prisma.whatsAppTemplate.deleteMany();
-    await prisma.whatsAppChatbot.deleteMany();
-    await prisma.publishedPost.deleteMany();
-    await prisma.scheduledPost.deleteMany();
-    await prisma.connectedAccount.deleteMany();
     await prisma.commission.deleteMany();
     await prisma.payment.deleteMany();
     await prisma.agentLead.deleteMany();
@@ -35,7 +28,6 @@ async function generateSampleData() {
     await prisma.task.deleteMany();
     await prisma.lead.deleteMany();
     await prisma.listing.deleteMany();
-    await prisma.portalListing.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.planUpgradeRequest.deleteMany();
     await prisma.integration.deleteMany();
@@ -90,12 +82,8 @@ async function generateSampleData() {
       { name: 'Marketing Hub', slug: 'marketing_hub', description: 'Email campaigns and workflows' },
       { name: 'Advanced Analytics', slug: 'analytics_pro', description: 'Advanced analytics dashboard' },
       { name: '3D Property Viewer', slug: '3d_viewer', description: '3D floor plan and tour builder' },
-      { name: 'Discovery Portal', slug: 'discovery', description: 'Public property discovery' },
       { name: 'Website CMS', slug: 'website_cms', description: 'Property micro-site builder' },
-      { name: 'Social Media', slug: 'social_posts', description: 'Schedule and publish social posts' },
-      { name: 'WhatsApp Campaigns', slug: 'social_whatsapp', description: 'WhatsApp campaign management' },
       { name: 'Automation Engine', slug: 'automation_engine', description: 'Lead workflow automation' },
-      { name: 'Portal Market', slug: 'portal_market', description: 'Sync leads and post to external portals' },
       { name: 'Brochure Intelligent', slug: 'brochure_ai', description: 'AI-powered property brochure generator' },
     ];
     const modules = [];
@@ -133,7 +121,7 @@ async function generateSampleData() {
         name: 'Professional', slug: 'pro-realestate',
         description: 'All features for high-volume agencies',
         price: 79, interval: 'monthly',
-        features: { maxProperties: -1, maxUsers: -1, whatsappEnabled: true, socialEnabled: true, portalMarketEnabled: true },
+        features: { maxProperties: -1, maxUsers: -1 },
         modules: { connect: proModIds }
       }
     });
@@ -782,115 +770,6 @@ async function generateSampleData() {
     });
     console.log('📢 Marketing: Templates, Audiences, Campaigns, Workflow, Forms created');
 
-    // ─── SOCIAL MEDIA MODULE ──────────────────────────────────────────────────
-    const _connectedFB = await prisma.connectedAccount.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id,
-        platform: 'FACEBOOK', accountId: 'fb_104567890123456',
-        accountName: 'Elite Real Estate London',
-        accessToken: 'EAALongFBAccessToken_SAMPLE', tokenExpiry: new Date('2026-01-01'),
-        isActive: true, metadata: { pageId: '104567890123456', category: 'Real Estate' }
-      }
-    });
-    const _connectedIG = await prisma.connectedAccount.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id,
-        platform: 'INSTAGRAM', accountId: 'ig_17841450123456',
-        accountName: '@eliterealestatelondon',
-        accessToken: 'EAALongIGAccessToken_SAMPLE', tokenExpiry: new Date('2026-01-01'),
-        isActive: true, metadata: { businessAccountId: '17841450123456' }
-      }
-    });
-
-    const _scheduledPost1 = await prisma.scheduledPost.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id, propertyId: reProps[0].id,
-        title: '🏠 New Mayfair Listing — Limited Units!',
-        description: 'Discover luxury 2-bed apartments in the heart of Mayfair. Call us today!',
-        hashtags: '#MayfairLiving #LuxuryApartments #LondonRealEstate #EliteRE',
-        platforms: ['FACEBOOK', 'INSTAGRAM'],
-        scheduledDate: new Date('2025-04-10'),
-        scheduledTime: '09:00', status: 'SCHEDULED',
-        mediaUrls: ['https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=800'],
-        imageData: { width: 1080, height: 1080, format: 'jpeg' }
-      }
-    });
-    const scheduledPost2 = await prisma.scheduledPost.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id, propertyId: reProps[1].id,
-        title: '✨ Chelsea Heights — Your Dream Home Awaits',
-        description: 'Breathtaking views, premium finishes. Limited availability.',
-        hashtags: '#ChelseaLiving #LondonProperties #LuxuryHomes',
-        platforms: ['FACEBOOK'], scheduledDate: new Date('2025-04-12'),
-        scheduledTime: '11:00', status: 'POSTED',
-        mediaUrls: ['https://images.unsplash.com/photo-1600585154340-be6161a46108?q=80&w=800'],
-        lastPostedAt: new Date('2025-04-12T11:00:00Z')
-      }
-    });
-
-    await prisma.publishedPost.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id,
-        scheduledPostId: scheduledPost2.id, platform: 'FACEBOOK',
-        platformPostId: 'fb_post_987654321', postUrl: 'https://fb.com/posts/987654321',
-        caption: '✨ Chelsea Heights — Your Dream Home Awaits',
-        mediaUrls: scheduledPost2.mediaUrls,
-        hashtags: scheduledPost2.hashtags, status: 'published',
-        metrics: { likes: 142, comments: 23, shares: 44, reach: 3420 }
-      }
-    });
-    console.log('📱 Social: Connected accounts, scheduled posts, published posts created');
-
-    // ─── WHATSAPP MODULE ──────────────────────────────────────────────────────
-    await prisma.whatsAppTemplate.create({
-      data: {
-        tenantId: tenantRE.id, wabaId: 'WABA_123456789',
-        name: 'property_alert_v2', category: 'MARKETING',
-        language: 'en', status: 'APPROVED',
-        components: [
-          { type: 'HEADER', format: 'IMAGE' },
-          { type: 'BODY', text: 'Hi {{1}}, we have a new property matching your budget of £{{2}} in {{3}}. Tap below to view!' },
-          { type: 'FOOTER', text: 'Reply STOP to unsubscribe' },
-          { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'View Property', url: 'https://elite-re.com/property/{{4}}' }] }
-        ],
-        variables: ['name', 'budget', 'location', 'propertySlug']
-      }
-    });
-
-    const waCampaign = await prisma.whatsAppCampaign.create({
-      data: {
-        tenantId: tenantRE.id, userId: ownerRE.id,
-        wabaId: 'WABA_123456789', phoneNumberId: 'PHN_44123456789',
-        templateName: 'property_alert_v2',
-        name: 'April Property Launch', status: 'SENT',
-        scheduledAt: new Date('2025-04-05'), sentCount: 5, deliveredCount: 5,
-        readCount: 3, failedCount: 0
-      }
-    });
-
-    for (let i = 0; i < 2; i++) {
-      await prisma.whatsAppMessage.create({
-        data: {
-          tenantId: tenantRE.id, businessId: 'WABA_123456789',
-          campaignId: waCampaign.id,
-          senderNumber: reLeads[i].phone || `+44770000001${i}`,
-          messageText: `Hi ${reLeads[i].name}, we have a new property matching your budget...`,
-          direction: 'OUTBOUND', metaMessageId: `wamid.${uuidv4().replace(/-/g, '')}`,
-          status: 'read'
-        }
-      });
-    }
-    // Inbound chatbot message
-    await prisma.whatsAppMessage.create({
-      data: {
-        tenantId: tenantRE.id, businessId: 'WABA_123456789',
-        senderNumber: '+447700000100',
-        messageText: 'Hi, I saw your listing and I am interested. Can you share more details?',
-        direction: 'INBOUND', metaMessageId: `wamid.${uuidv4().replace(/-/g, '')}`,
-        status: 'received'
-      }
-    });
-    console.log('💬 WhatsApp: Templates, Campaigns, Messages created');
 
     // ─── PLAN UPGRADE REQUESTS ────────────────────────────────────────────────
     await prisma.planUpgradeRequest.create({
@@ -898,7 +777,7 @@ async function generateSampleData() {
         tenantId: tenantCW.id, ownerId: ownerCW.id,
         requestedPlanId: proPlan.id, status: 1,
         email: ownerCW.email,
-        message: 'We need WhatsApp and social media features to scale our marketing efforts.'
+        message: 'We need advanced marketing features to scale our efforts.'
       }
     });
 
