@@ -11,5 +11,11 @@
             "src": "/(.*)",
             "dest": "src/app.js"
         }
-    ]
+    ],
+    "functions": {
+        "src/app.js": {
+            "memory": 1024,
+            "maxDuration": 60
+        }
+    }
 }

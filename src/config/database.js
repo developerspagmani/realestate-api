@@ -14,9 +14,8 @@ const prisma = globalForPrisma.prisma || new PrismaClient({
   errorFormat: 'pretty',
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+// Cache the client in all environments on Vercel to reuse connections across warm starts
+globalForPrisma.prisma = prisma;
 
 
 const connectDB = async () => {

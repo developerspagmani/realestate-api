@@ -21,22 +21,28 @@ const analyticsController = {
                 });
             }
 
-            const revenuePerMonth = await Promise.all(months.map(async (m) => {
-                const result = await prisma.booking.aggregate({
-                    where: {
-                        tenantId,
-                        status: { in: [2, 4] }, // Confirmed or Completed
-                        createdAt: { gte: m.start, lte: m.end }
-                    },
-                    _sum: { totalPrice: true }
-                });
-                return {
-                    month: m.name,
-                    revenue: parseFloat(result._sum.totalPrice || 0)
-                };
-            }));
+            const [revenueResults, funnelCounts] = await Promise.all([
+                Promise.all(months.map(async (m) => {
+                    const result = await prisma.booking.aggregate({
+                        where: {
+                            tenantId,
+                            status: { in: [2, 4] }, // Confirmed or Completed
+                            createdAt: { gte: m.start, lte: m.end }
+                        },
+                        _sum: { totalPrice: true }
+                    });
+                    return {
+                        month: m.name,
+                        revenue: parseFloat(result._sum.totalPrice || 0)
+                    };
+                })),
+                prisma.lead.groupBy({
+                    by: ['status'],
+                    where: { tenantId },
+                    _count: { id: true }
+                })
+            ]);
 
-            // Lead Funnel
             const funnelLevels = [
                 { status: 1, label: 'New Leads' },
                 { status: 2, label: 'Contacted' },
@@ -45,17 +51,15 @@ const analyticsController = {
                 { status: 5, label: 'Lost' }
             ];
 
-            const funnelData = await Promise.all(funnelLevels.map(async (level) => {
-                const count = await prisma.lead.count({
-                    where: { tenantId, status: level.status }
-                });
-                return { label: level.label, count };
-            }));
+            const funnelData = funnelLevels.map(level => {
+                const match = funnelCounts.find(c => c.status === level.status);
+                return { label: level.label, count: match ? match._count.id : 0 };
+            });
 
             res.json({
                 success: true,
                 data: {
-                    revenueChart: revenuePerMonth,
+                    revenueChart: revenueResults,
                     funnel: funnelData
                 }
             });
@@ -187,214 +191,146 @@ const analyticsController = {
             if (Object.keys(dateFilter).length > 0) leadWhere.createdAt = dateFilter;
             if (propertyId) leadWhere.propertyId = propertyId;
 
-            // Report 1: Lead Source Attribution
-            const sourceCounts = await prisma.lead.groupBy({
-                by: ['source'],
-                where: leadWhere,
-                _count: { id: true }
-            });
+            const thirtyMinsAgo = new Date();
+            thirtyMinsAgo.setMinutes(thirtyMinsAgo.getMinutes() - 30);
 
-            const sourceLabels = {
-                1: 'Website', 2: 'Email', 3: 'Phone', 4: 'Social',
-                5: 'Referral', 6: 'Other', 7: 'Chatbot', 8: 'Popup'
-            };
-
-            const leadSources = sourceCounts.map(s => ({
-                source: sourceLabels[s.source] || 'Direct/Unknown',
-                count: s._count.id
-            }));
-
-            // Identity Stitching Metrics
-            const totalIdentifiedVisitors = await prisma.lead.count({
-                where: { ...leadWhere, NOT: { visitorId: null } }
-            });
-
-            const uniqueVisitorIds = await prisma.lead.groupBy({
-                by: ['visitorId'],
-                where: { ...leadWhere, NOT: { visitorId: null } }
-            });
-            const totalUniqueVisitors = uniqueVisitorIds.length;
-
-            // Report 2: Property Traffic (Top Views)
-            // Wrapped in try/catch in case the lead_interactions table hasn't been migrated yet
-            const propertyHits = {};
-            const keywords = {};
-            const cityDemand = {};
-            const pricePoints = [];
-
-            try {
-                const interactionWhere = {
-                    tenantId,
-                    type: { in: ['PROPERTY_VIEW', 'PROPERTY_DETAIL_VIEW', 'SEARCH', 'SEARCH_FILTER'] }
-                };
-                if (Object.keys(dateFilter).length > 0) interactionWhere.occurredAt = dateFilter;
-
-                const interactions = await prisma.leadInteraction.findMany({
-                    where: interactionWhere,
-                    select: { type: true, metadata: true }
-                });
-                
-                // POPUP PERFORMANCE TRACKING
-                const popupMetrics = {
-                    totalImpressions: 0,
-                    totalClicks: 0,
-                    totalSubmissions: 0,
-                    byPopup: {}
-                };
-
-                const popupInteractions = await prisma.leadInteraction.findMany({
+            // PERF-08: Execute ALL independent heavy queries in parallel at the very beginning
+            const [
+                sourceCounts, 
+                totalIdentifiedVisitors, 
+                uniqueVisitorIds,
+                highQualityCount, 
+                midQualityCount, 
+                lowQualityCount, 
+                convertedLeads,
+                leadsTrend,
+                properties,
+                interactions,
+                popupInteractions,
+                recentActivityCount,
+                recentViews
+            ] = await Promise.all([
+                prisma.lead.groupBy({ by: ['source'], where: leadWhere, _count: { id: true } }),
+                prisma.lead.count({ where: { ...leadWhere, NOT: { visitorId: null } } }),
+                prisma.lead.groupBy({ by: ['visitorId'], where: { ...leadWhere, NOT: { visitorId: null } } }),
+                prisma.lead.count({ where: { ...leadWhere, leadScore: { gte: 50 } } }),
+                prisma.lead.count({ where: { ...leadWhere, leadScore: { gte: 20, lt: 50 } } }),
+                prisma.lead.count({ where: { ...leadWhere, leadScore: { lt: 20 } } }),
+                prisma.lead.findMany({ where: { ...leadWhere, status: 4 }, select: { createdAt: true, updatedAt: true } }),
+                prisma.lead.findMany({ where: leadWhere, select: { createdAt: true } }),
+                prisma.property.findMany({ where: { tenantId }, select: { id: true, title: true, latitude: true, longitude: true, city: true, price: true, propertyType: true } }),
+                prisma.leadInteraction.findMany({
+                    where: {
+                        tenantId,
+                        type: { in: ['PROPERTY_VIEW', 'PROPERTY_DETAIL_VIEW', 'SEARCH', 'SEARCH_FILTER'] },
+                        ...(Object.keys(dateFilter).length > 0 ? { occurredAt: dateFilter } : {})
+                    },
+                    select: { type: true, metadata: true },
+                    take: 5000
+                }).catch(() => []),
+                prisma.leadInteraction.findMany({
                     where: {
                         tenantId,
                         type: { in: ['POPUP_VIEW', 'POPUP_CLICK', 'POPUP_SUBMIT'] },
                         ...(Object.keys(dateFilter).length > 0 ? { occurredAt: dateFilter } : {})
                     },
-                    select: { type: true, metadata: true }
-                });
+                    select: { type: true, metadata: true },
+                    take: 5000
+                }).catch(() => []),
+                prisma.leadInteraction.count({ where: { tenantId, occurredAt: { gte: thirtyMinsAgo } } }).catch(() => 0),
+                prisma.leadInteraction.findMany({
+                    where: { 
+                        tenantId, 
+                        occurredAt: { gte: thirtyMinsAgo },
+                        type: { in: ['PROPERTY_VIEW', 'CHAT_INIT', 'FORM_SUBMIT', 'POPUP_SUBMIT', 'POPUP_CLICK'] }
+                    },
+                    take: 15,
+                    orderBy: { occurredAt: 'desc' },
+                    select: { leadId: true, metadata: true, occurredAt: true, type: true }
+                }).catch(() => [])
+            ]);
 
-                popupInteractions.forEach(pi => {
-                    const pid = pi.metadata?.popupId || 'unknown';
-                    const pname = pi.metadata?.popupName || 'Unnamed Popup';
-                    if (!popupMetrics.byPopup[pid]) {
-                        popupMetrics.byPopup[pid] = { name: pname, views: 0, clicks: 0, submissions: 0 };
+            // --- PROCESS RESULTS ---
+
+            // Report 1: Lead Source
+            const sourceLabels = {
+                1: 'Website', 2: 'Email', 3: 'Phone', 4: 'Social',
+                5: 'Referral', 6: 'Other', 7: 'Chatbot', 8: 'Popup'
+            };
+            const leadSources = sourceCounts.map(s => ({
+                source: sourceLabels[s.source] || 'Direct/Unknown',
+                count: s._count.id
+            }));
+            const totalUniqueVisitors = uniqueVisitorIds.length;
+
+            // Report 2: Property Traffic & Intelligence
+            const propertyHits = {};
+            const keywords = {};
+            const cityDemand = {};
+            const pricePoints = [];
+            const propertyCities = {};
+            properties.forEach(p => { if (p.city) propertyCities[p.id] = p.city; });
+
+            interactions.forEach(i => {
+                if (i.type.includes('PROPERTY')) {
+                    const pid = i.metadata?.propertyId;
+                    const title = i.metadata?.title || 'Unknown Property';
+                    if (pid) {
+                        if (propertyId && pid !== propertyId) return;
+                        if (!propertyHits[pid]) propertyHits[pid] = { id: pid, title, views: 0 };
+                        propertyHits[pid].views++;
                     }
-
-                    if (pi.type === 'POPUP_VIEW') {
-                        popupMetrics.totalImpressions++;
-                        popupMetrics.byPopup[pid].views++;
-                    } else if (pi.type === 'POPUP_CLICK') {
-                        popupMetrics.totalClicks++;
-                        popupMetrics.byPopup[pid].clicks++;
-                    } else if (pi.type === 'POPUP_SUBMIT') {
-                        popupMetrics.totalSubmissions++;
-                        popupMetrics.byPopup[pid].submissions++;
-                    }
-                });
-
-                req.popupPerformance = {
-                    ...popupMetrics,
-                    conversionRate: popupMetrics.totalImpressions > 0 ? (popupMetrics.totalSubmissions / popupMetrics.totalImpressions * 100).toFixed(1) : 0,
-                    topPopups: Object.values(popupMetrics.byPopup).sort((a, b) => b.submissions - a.submissions).slice(0, 5)
-                };
-
-                // Pre-fetch property cities for mapping
-                const propertyCities = {};
-                const propertyIdsInInteractions = interactions
-                    .filter(i => i.metadata?.propertyId)
-                    .map(i => i.metadata.propertyId);
-                
-                if (propertyIdsInInteractions.length > 0) {
-                    const props = await prisma.property.findMany({
-                        where: { id: { in: propertyIdsInInteractions } },
-                        select: { id: true, city: true }
-                    });
-                    props.forEach(p => { if (p.city) propertyCities[p.id] = p.city; });
                 }
+                if (i.type === 'SEARCH' || i.type === 'SEARCH_FILTER' || i.type === 'PROPERTY_VIEW' || i.type === 'PROPERTY_DETAIL_VIEW') {
+                    if (campaignId && i.metadata?.campaignId !== campaignId) return;
+                    const kw = i.metadata?.keyword?.toLowerCase();
+                    let city = i.metadata?.city || i.metadata?.location || propertyCities[i.metadata?.propertyId];
+                    const price = parseFloat(i.metadata?.price || i.metadata?.budget);
+                    if (kw) keywords[kw] = (keywords[kw] || 0) + 1;
+                    if (city && city !== 'Unknown' && city !== '') cityDemand[city] = (cityDemand[city] || 0) + 1;
+                    if (!isNaN(price) && price > 0) pricePoints.push(price);
+                }
+            });
 
-                interactions.forEach(i => {
-                    // Tracking views
-                    if (i.type.includes('PROPERTY')) {
-                        const pid = i.metadata?.propertyId;
-                        const title = i.metadata?.title || 'Unknown Property';
-                        if (pid) {
-                            if (propertyId && pid !== propertyId) return;
-                            if (!propertyHits[pid]) propertyHits[pid] = { id: pid, title, views: 0 };
-                            propertyHits[pid].views++;
-                        }
-                    }
+            const topProperties = Object.values(propertyHits).sort((a, b) => b.views - a.views).slice(0, 5);
+            const topSearchKeywords = Object.entries(keywords).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }));
 
-                    // Tracking Search Intelligence & Regional Demand
-                    if (i.type === 'SEARCH' || i.type === 'SEARCH_FILTER' || i.type === 'PROPERTY_VIEW' || i.type === 'PROPERTY_DETAIL_VIEW') {
-                        if (campaignId && i.metadata?.campaignId !== campaignId) return;
-
-                        const kw = i.metadata?.keyword?.toLowerCase();
-                        let city = i.metadata?.city || i.metadata?.location || propertyCities[i.metadata?.propertyId];
-                        const price = parseFloat(i.metadata?.price || i.metadata?.budget);
-
-                        if (kw) keywords[kw] = (keywords[kw] || 0) + 1;
-                        if (city && city !== 'Unknown' && city !== '') cityDemand[city] = (cityDemand[city] || 0) + 1;
-                        if (!isNaN(price) && price > 0) pricePoints.push(price);
-                    }
-                });
-            } catch (interactionErr) {
-                console.warn('LeadInteraction table not available or query failed:', interactionErr.message);
-                // Continue with empty interaction data — other reports will still work
-            }
-
-
-
-            const topProperties = Object.values(propertyHits)
-                .sort((a, b) => b.views - a.views)
-                .slice(0, 5);
-
-            const topSearchKeywords = Object.entries(keywords)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10)
-                .map(([name, count]) => ({ name, count }));
-
-            // Report 3: Lead Generation Trend
+            // Report 3: Lead Trend
             let trendDays = 30;
             let trendStart = new Date();
             trendStart.setDate(trendStart.getDate() - 30);
-
             if (startDate && endDate && !isNaN(new Date(startDate).getTime()) && !isNaN(new Date(endDate).getTime())) {
                 trendDays = Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 3600 * 24));
                 trendStart = new Date(startDate);
-            } else if (startDate && !isNaN(new Date(startDate).getTime())) {
-                trendStart = new Date(startDate);
-                // Adjust trendDays if we have start but no end? Usually let it be 30 from that point
             }
-
-            const leadsTrend = await prisma.lead.findMany({
-                where: leadWhere,
-                select: { createdAt: true }
-            });
-
             const days = {};
             for (let i = 0; i < trendDays; i++) {
                 const d = new Date(trendStart);
                 d.setDate(d.getDate() + i);
                 days[d.toISOString().split('T')[0]] = 0;
             }
-
             leadsTrend.forEach(l => {
                 const date = l.createdAt.toISOString().split('T')[0];
                 if (days[date] !== undefined) days[date]++;
             });
+            const genTrend = Object.entries(days).map(([date, count]) => ({ date, count })).sort((a, b) => a.date.localeCompare(b.date));
 
-            const genTrend = Object.entries(days)
-                .map(([date, count]) => ({ date, count }))
-                .sort((a, b) => a.date.localeCompare(b.date));
-
-            // Report 4: Lead Quality
+            // Report 4 & 5: Quality & Velocity
             const qualityDist = [
-                { range: 'High (50+)', count: await prisma.lead.count({ where: { ...leadWhere, leadScore: { gte: 50 } } }) },
-                { range: 'Medium (20-49)', count: await prisma.lead.count({ where: { ...leadWhere, leadScore: { gte: 20, lt: 50 } } }) },
-                { range: 'Low (0-19)', count: await prisma.lead.count({ where: { ...leadWhere, leadScore: { lt: 20 } } }) }
+                { range: 'High (50+)', count: highQualityCount },
+                { range: 'Medium (20-49)', count: midQualityCount },
+                { range: 'Low (0-19)', count: lowQualityCount }
             ];
-
-            // Report 5: Conversion Velocity
-            const convertedLeads = await prisma.lead.findMany({
-                where: { ...leadWhere, status: 4 },
-                select: { createdAt: true, updatedAt: true }
-            });
-
             let totalDays = 0;
             convertedLeads.forEach(l => {
                 if (l.updatedAt && l.createdAt) {
-                    const diff = l.updatedAt.getTime() - l.createdAt.getTime();
-                    totalDays += diff / (1000 * 3600 * 24);
+                    totalDays += (l.updatedAt.getTime() - l.createdAt.getTime()) / (1000 * 3600 * 24);
                 }
             });
             const avgVelocity = convertedLeads.length > 0 ? (totalDays / convertedLeads.length).toFixed(1) : 0;
 
-            // Report 6: Forecasting AI Prediction (Demand vs Supply)
-            const properties = await prisma.property.findMany({
-                where: { tenantId },
-                select: { price: true, city: true, propertyType: true }
-            });
-
+            // Report 6: Forecasting
             const predictions = [];
-            // logic: find cities with high search but low inventory
             Object.entries(cityDemand).forEach(([city, count]) => {
                 const supplyCount = properties.filter(p => p.city?.toLowerCase() === city.toLowerCase()).length;
                 if (count > supplyCount * 2 && count > 5) {
@@ -406,8 +342,6 @@ const analyticsController = {
                     });
                 }
             });
-
-            // logic: price gap analysis
             if (pricePoints.length > 0 && properties.length > 0) {
                 const avgDemandPrice = pricePoints.reduce((a, b) => a + b, 0) / pricePoints.length;
                 const avgSupplyPrice = properties.reduce((a, b) => a + parseFloat(b.price || 0), 0) / properties.length;
@@ -416,129 +350,47 @@ const analyticsController = {
                         type: 'PRICE_OPTIMIZATION',
                         location: 'Global',
                         demandLevel: 'Medium',
-                        recommendation: `Average user budget is $${avgDemandPrice.toLocaleString()} but your average listing is $${avgSupplyPrice.toLocaleString()}. Suggest restocking properties closer to the user budget.`
+                        recommendation: `Avg budget $${avgDemandPrice.toLocaleString()} vs avg listing $${avgSupplyPrice.toLocaleString()}.`
                     });
                 }
             }
 
+            // Report 7: Realtime & Popups
+            const popupMetrics = { totalImpressions: 0, totalClicks: 0, totalSubmissions: 0, byPopup: {} };
+            popupInteractions.forEach(pi => {
+                const pid = pi.metadata?.popupId || 'unknown';
+                const pname = pi.metadata?.popupName || 'Unnamed Popup';
+                if (!popupMetrics.byPopup[pid]) popupMetrics.byPopup[pid] = { name: pname, views: 0, clicks: 0, submissions: 0 };
+                if (pi.type === 'POPUP_VIEW') { popupMetrics.totalImpressions++; popupMetrics.byPopup[pid].views++; }
+                else if (pi.type === 'POPUP_CLICK') { popupMetrics.totalClicks++; popupMetrics.byPopup[pid].clicks++; }
+                else if (pi.type === 'POPUP_SUBMIT') { popupMetrics.totalSubmissions++; popupMetrics.byPopup[pid].submissions++; }
+            });
 
-
-            // Report 7: Realtime Dynamics
-            const thirtyMinsAgo = new Date();
-            thirtyMinsAgo.setMinutes(thirtyMinsAgo.getMinutes() - 30);
-            
-            let recentActivityCount = 0;
-            try {
-                recentActivityCount = await prisma.leadInteraction.count({
-                    where: { tenantId, occurredAt: { gte: thirtyMinsAgo } }
-                });
-            } catch (_e) {
-                // Ignore error if leadInteraction is not available or query fails
-            }
-
-            const activeRegions = Object.entries(cityDemand)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5)
-                .map(([name]) => name);
-
-            // Fetch recent property views for map markers
-            let mapMarkers = [];
-            try {
-                const recentViews = await prisma.leadInteraction.findMany({
-                    where: { 
-                        tenantId, 
-                        occurredAt: { gte: thirtyMinsAgo },
-                        type: { in: ['PROPERTY_VIEW', 'CHAT_INIT', 'FORM_SUBMIT', 'POPUP_SUBMIT', 'POPUP_CLICK'] }
-                    },
-                    take: 15,
-                    orderBy: { occurredAt: 'desc' },
-                    select: { 
-                        leadId: true,
-                        metadata: true,
-                        occurredAt: true,
-                        type: true
-                    }
-                });
-
-                const propertyIds = recentViews.map(v => v.metadata?.propertyId).filter(id => id);
-                let props = [];
-                if (propertyIds.length > 0) {
-                    props = await prisma.property.findMany({
-                        where: { id: { in: propertyIds } },
-                        select: { id: true, title: true, latitude: true, longitude: true, city: true }
-                    });
-                }
-                
-                mapMarkers = recentViews.map(v => {
-                    const p = props.find(p => p.id === v.metadata?.propertyId);
-                    
-                    // Logic: If we have user coordinates in metadata, use them.
-                    // Otherwise, use property location but add a random "Lead Offset" (0.01 to 0.05 degrees)
-                    // so we don't just show properties, but "Leads near/on properties"
-                    let lat = parseFloat(v.metadata?.userLat || p?.latitude || 25.2048);
-                    let lng = parseFloat(v.metadata?.userLng || p?.longitude || 55.2708);
-                    
-                    if (!v.metadata?.userLat && p) {
-                        // Simulate lead location being slightly offset from the property for visual variety
-                        lat += (Math.random() - 0.5) * 0.02;
-                        lng += (Math.random() - 0.5) * 0.02;
-                    } else if (!p) {
-                        // If no property (e.g. general chat), pick a random spot in a known active city
-                        const cities = {
-                            'Dubai': [25.2048, 55.2708],
-                            'Mumbai': [19.0760, 72.8777],
-                            'London': [51.5074, -0.1278],
-                            'Singapore': [1.3521, 103.8198]
-                        };
-                        const city = v.metadata?.city || 'Dubai';
-                        const base = cities[city] || cities['Dubai'];
-                        lat = base[0] + (Math.random() - 0.5) * 0.1;
-                        lng = base[1] + (Math.random() - 0.5) * 0.1;
-                    }
-
-                    return {
-                        id: v.leadId || `anon-${Math.random().toString(36).substr(2, 9)}`,
-                        title: p?.title || (v.type === 'CHAT_INIT' ? 'Live Chat User' : 'Portal Visitor'),
-                        lat,
-                        lng,
-                        type: v.type,
-                        timestamp: v.occurredAt
-                    };
-                }).filter(m => m !== null);
-            } catch (_e) {
-                // Ignore error if leadInteraction is not available or query fails
-            }
+            const activeRegions = Object.entries(cityDemand).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name);
+            const mapMarkers = recentViews.map(v => {
+                const p = properties.find(p => p.id === v.metadata?.propertyId);
+                let lat = parseFloat(v.metadata?.userLat || p?.latitude || 25.2048);
+                let lng = parseFloat(v.metadata?.userLng || p?.longitude || 55.2708);
+                if (!v.metadata?.userLat && p) { lat += (Math.random() - 0.5) * 0.02; lng += (Math.random() - 0.5) * 0.02; }
+                return { id: v.leadId || `anon-${Math.random().toString(36).substr(2, 9)}`, title: p?.title || (v.type === 'CHAT_INIT' ? 'Live Chat' : 'Visitor'), lat, lng, type: v.type, timestamp: v.occurredAt };
+            });
 
             res.json({
                 success: true,
                 data: {
-                    leadSources,
-                    topProperties,
-                    genTrend,
-                    qualityDist,
-                    avgVelocity,
-                    topSearchKeywords,
-                    forecastingAI: predictions,
+                    leadSources, topProperties, genTrend, qualityDist, avgVelocity, topSearchKeywords, forecastingAI: predictions,
                     realtime: {
-                        activeNow: Math.max(5, Math.floor(recentActivityCount * 1.3)), 
-                        recentRegions: activeRegions.length > 0 ? activeRegions : ['Mumbai', 'Dubai', 'Singapore', 'Abu Dhabi', 'London'],
+                        activeNow: Math.max(5, Math.floor(recentActivityCount * 1.3)),
+                        recentRegions: activeRegions.length > 0 ? activeRegions : ['Mumbai', 'Dubai', 'Singapore'],
                         mapMarkers
                     },
-                    stitching: {
-                        totalIdentifiedVisitors,
-                        totalUniqueVisitors,
-                        stitchingRate: totalIdentifiedVisitors > 0 ? ((totalIdentifiedVisitors - totalUniqueVisitors) / totalIdentifiedVisitors * 100).toFixed(1) : 0
-                    },
-                    popups: req.popupPerformance || { totalImpressions: 0, totalClicks: 0, totalSubmissions: 0, conversionRate: 0, topPopups: [] }
+                    stitching: { totalIdentifiedVisitors, totalUniqueVisitors, stitchingRate: totalIdentifiedVisitors > 0 ? ((totalIdentifiedVisitors - totalUniqueVisitors) / totalIdentifiedVisitors * 100).toFixed(1) : 0 },
+                    popups: { ...popupMetrics, conversionRate: popupMetrics.totalImpressions > 0 ? (popupMetrics.totalSubmissions / popupMetrics.totalImpressions * 100).toFixed(1) : 0, topPopups: Object.values(popupMetrics.byPopup).sort((a, b) => b.submissions - a.submissions).slice(0, 5) }
                 }
             });
         } catch (error) {
             console.error('Marketing insights error:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Server error fetching marketing insights',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
-            });
+            res.status(500).json({ success: false, message: 'Server error' });
         }
     },
 
@@ -556,37 +408,43 @@ const analyticsController = {
             if (startDate && !isNaN(new Date(startDate).getTime())) dateFilter.gte = new Date(startDate);
             if (endDate && !isNaN(new Date(endDate).getTime())) dateFilter.lte = new Date(endDate);
 
-            // ── Pull all interactions ──────────────────────────────────────────
+            // ── Pull data in parallel ──────────────────────────────────────────
             let interactions = [];
+            let properties = [];
+
             try {
                 const where = {
                     tenantId,
                     type: { in: ['SEARCH', 'SEARCH_FILTER', 'PROPERTY_VIEW', 'PROPERTY_DETAIL_VIEW'] }
                 };
                 if (Object.keys(dateFilter).length > 0) where.occurredAt = dateFilter;
-                interactions = await prisma.leadInteraction.findMany({
-                    where,
-                    select: { type: true, metadata: true, occurredAt: true }
-                });
-            } catch (e) {
-                console.warn('leadInteraction not available:', e.message);
-            }
 
-            // ── Pull inventory once ────────────────────────────────────────────
-            const properties = await prisma.property.findMany({
-                where: { tenantId },
-                select: {
-                    city: true, price: true, propertyType: true,
-                    bedrooms: true, bathrooms: true, title: true,
-                    propertyAmenities: {
+                const [intRes, propRes] = await Promise.all([
+                    prisma.leadInteraction.findMany({
+                        where,
+                        select: { type: true, metadata: true, occurredAt: true },
+                        take: 5000
+                    }),
+                    prisma.property.findMany({
+                        where: { tenantId },
                         select: {
-                            amenity: {
-                                select: { name: true }
+                            city: true, price: true, propertyType: true,
+                            bedrooms: true, bathrooms: true, title: true,
+                            propertyAmenities: {
+                                select: {
+                                    amenity: {
+                                        select: { name: true }
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            });
+                    })
+                ]);
+                interactions = intRes;
+                properties = propRes;
+            } catch (e) {
+                console.warn('Data fetch error in Demand Intelligence:', e.message);
+            }
 
             const propTypeMap = {
                 1: 'Apartment', 2: 'Villa', 3: 'Townhouse', 4: 'Land',
