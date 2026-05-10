@@ -2,12 +2,7 @@ const express = require('express');
 const router = express.Router();
 const publicController = require('../controllers/publicController');
 
-/**
- * @swagger
- * tags:
- *   name: Public
- *   description: Unauthenticated discovery endpoints for widgets and public pages
- */
+
 
 const { getFormPublic } = require('../controllers/formBuilderController');
 const { trackInteraction } = require('../controllers/interactionController');

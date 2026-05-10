@@ -7,7 +7,6 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 // Restart trigger - forced update - v2
 
-const { specs, swaggerUi } = require('./config/swagger');
 const { connectDB, disconnectDB, getDatabaseInfo } = require('./config/database');
 
 console.log('--- API Initialization ---');
@@ -75,7 +74,7 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "https://app.virpanix.com",
-  "https://localhost:3000"
+  "https://demo-api.virpanix.com"
 ].filter(Boolean);
 
 app.use(cors({
@@ -155,18 +154,7 @@ app.use('/api/tasks', taskRoutes);
 
 
 
-// Swagger Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
-  explorer: true,
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Multi-Tenant Real Estate API Documentation',
-}));
 
-// Swagger JSON endpoint
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(specs);
-});
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -197,7 +185,7 @@ const startServer = async () => {
       console.log(`📊 Environment: ${process.env.NODE_ENV}`);
       const dbInfo = getDatabaseInfo();
       console.log(`🗄️  Database: ${dbInfo.provider} (${dbInfo.url})`);
-      console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
+
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
