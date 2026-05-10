@@ -29,6 +29,33 @@ const moduleController = {
         }
     },
 
+    // Admin: Update a module definition
+    updateModule: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, slug, description } = req.body;
+            const module = await prisma.module.update({
+                where: { id },
+                data: { name, slug, description }
+            });
+            res.json({ success: true, data: module });
+        } catch (error) {
+            if (error.code === 'P2002') return res.status(400).json({ success: false, message: 'Module slug already exists.' });
+            res.status(500).json({ success: false, message: 'Error updating module.' });
+        }
+    },
+
+    // Admin: Delete a module definition
+    deleteModule: async (req, res) => {
+        try {
+            const { id } = req.params;
+            await prisma.module.delete({ where: { id } });
+            res.json({ success: true, message: 'Module deleted successfully.' });
+        } catch (error) {
+            res.status(500).json({ success: false, message: 'Error deleting module.' });
+        }
+    },
+
     // Admin: Get modules for a specific tenant
     getTenantModules: async (req, res) => {
         try {
@@ -69,6 +96,17 @@ const moduleController = {
     getMyModules: async (req, res) => {
         try {
             const { tenantId } = req.user;
+
+            // 0. Super Admins see all modules
+            if (req.user.role === 2) { // Assuming 2 is ADMIN role
+                const allModules = await prisma.module.findMany({
+                    select: { slug: true }
+                });
+                return res.json({
+                    success: true,
+                    data: allModules.map(m => m.slug)
+                });
+            }
 
             if (!tenantId) {
                 return res.json({

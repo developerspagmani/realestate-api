@@ -37,6 +37,10 @@ const executeCronTasks = async () => {
         const minute = new Date().getMinutes();
         if (minute % 15 === 0) {
             try {
+                // 3a. Sync Social Media Metrics
+                console.log('[Node-Cron] Triggering social metrics sync...');
+                await scheduledPostsService.syncAllRecentPostsMetrics();
+
                 const dealPreventionService = require('../services/dealPreventionService');
                 const leadNurtureService = require('../services/social/leadNurtureService');
 

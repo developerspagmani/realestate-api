@@ -430,11 +430,37 @@ const getForecast = async (req, res) => {
     }
 };
 
+/**
+ * Manually trigger a metrics sync for recent posts
+ * @route POST /api/social/analytics/sync
+ */
+const syncMetrics = async (req, res) => {
+    try {
+        const ScheduledPostsService = require('../../services/social/scheduledPostsService');
+        const scheduledPostsService = new ScheduledPostsService();
+        
+        const result = await scheduledPostsService.syncAllRecentPostsMetrics();
+
+        res.status(200).json({
+            success: true,
+            message: `Successfully synced metrics for ${result.count} recent posts`,
+            data: result
+        });
+    } catch (error) {
+        console.error('Manual metrics sync error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error triggering metrics sync'
+        });
+    }
+};
+
 module.exports = {
     getOverview,
     getPlatformAnalytics,
     getPostingTrends,
     getPropertyAnalytics,
     getEngagementMetrics,
-    getForecast
+    getForecast,
+    syncMetrics
 };

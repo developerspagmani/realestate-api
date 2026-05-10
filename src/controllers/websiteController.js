@@ -110,10 +110,11 @@ const websiteController = {
             const { tenantId: queryTenantId } = req.query;
             const isAdmin = req.user.role === 2;
 
-            const effectiveTenantId = bodyTenantId || queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+            let tenantId = bodyTenantId || queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+            if (tenantId === 'all') tenantId = null;
 
             const where = { id };
-            if (effectiveTenantId) where.tenantId = effectiveTenantId;
+            if (tenantId) where.tenantId = tenantId;
 
             const website = await prisma.website.updateMany({
                 where,
@@ -335,7 +336,7 @@ const websiteController = {
                         finalEmail = val.toLowerCase();
                     }
                     // Match Phone (digits, plus, spaces, dashes - minimal 8 chars)
-                    else if (!finalPhone && /^[+]?[0-9\s\-]{8,20}$/.test(val) && (key.toLowerCase().includes('phone') || key.toLowerCase().includes('tel') || key.toLowerCase().includes('contact'))) {
+                    else if (!finalPhone && /^[+]?[0-9\s-]{8,20}$/.test(val) && (key.toLowerCase().includes('phone') || key.toLowerCase().includes('tel') || key.toLowerCase().includes('contact'))) {
                         finalPhone = val;
                     }
                     // Generic name fallback if missing

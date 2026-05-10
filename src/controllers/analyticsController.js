@@ -433,7 +433,9 @@ const analyticsController = {
                 recentActivityCount = await prisma.leadInteraction.count({
                     where: { tenantId, occurredAt: { gte: thirtyMinsAgo } }
                 });
-            } catch (e) {}
+            } catch (_e) {
+                // Ignore error if leadInteraction is not available or query fails
+            }
 
             const activeRegions = Object.entries(cityDemand)
                 .sort((a, b) => b[1] - a[1])
@@ -504,7 +506,9 @@ const analyticsController = {
                         timestamp: v.occurredAt
                     };
                 }).filter(m => m !== null);
-            } catch (e) {}
+            } catch (_e) {
+                // Ignore error if leadInteraction is not available or query fails
+            }
 
             res.json({
                 success: true,

@@ -703,7 +703,7 @@ const getPhoneInfo = async (req, res) => {
 };
 
 /**
- * Get Webhook Info
+ * Get Webhook Info and Setup Instructions
  * @route GET /api/social/whatsapp/webhook/info
  */
 const getWebhookInfo = async (req, res) => {
@@ -715,7 +715,22 @@ const getWebhookInfo = async (req, res) => {
             success: true,
             data: {
                 callbackUrl: `${BACKEND_URL}/api/social/whatsapp/webhook`,
-                verifyToken: VERIFY_TOKEN
+                verifyToken: VERIFY_TOKEN,
+                setupInstructions: {
+                    platform: 'Meta Developer Portal',
+                    product: 'WhatsApp',
+                    section: 'Configuration',
+                    fields: [
+                        { label: 'Callback URL', value: `${BACKEND_URL}/api/social/whatsapp/webhook` },
+                        { label: 'Verify Token', value: VERIFY_TOKEN }
+                    ],
+                    webhookFields: [
+                        'messages',
+                        'message_deliveries',
+                        'message_echoes',
+                        'message_read'
+                    ]
+                }
             }
         });
     } catch (error) {

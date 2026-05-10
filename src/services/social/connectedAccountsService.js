@@ -178,26 +178,57 @@ class ConnectedAccountsService {
 
             const { access_token, expires_in } = tokenResponse.data;
 
-            // Get user info
+            // Get user info and pages in one call (Method A)
             const userResponse = await axios.get('https://graph.facebook.com/v18.0/me', {
                 params: {
-                    fields: 'id,name,email',
+                    fields: 'id,name,email,accounts{id,name,access_token,instagram_business_account{id,username,name}}',
                     access_token
                 }
             });
 
             const userData = userResponse.data;
+            console.log(`👤 Meta User connecting: ${userData.name} (ID: ${userData.id})`);
+            
+            // Extract pages
+            let pages = userData.accounts?.data || [];
+            
+            // If Method A found nothing, try Method B (direct accounts endpoint)
+            if (pages.length === 0) {
+                console.log('   🔍 Method A found 0. Trying Method B (me/accounts)...');
+                try {
+                    const pResp = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
+                        params: {
+                            fields: 'id,name,access_token,category,instagram_business_account{id,username,name}',
+                            access_token
+                        }
+                    });
+                    pages = pResp.data.data || [];
+                } catch (err) { console.log(`   ⚠️ Method B failed: ${err.message}`); }
+            }
 
-            // Get user's pages (for Facebook/Instagram posting)
-            const pagesResponse = await axios.get('https://graph.facebook.com/v18.0/me/accounts', {
-                params: {
-                    fields: 'id,name,access_token,category,instagram_business_account',
-                    access_token
+            // If still nothing, try Method C (Direct Page ID fallback from .env for development)
+            if (pages.length === 0 && process.env.META_DEBUG_PAGE_ID) {
+                console.log(`   🔍 Method C: Force fetching Page ID from .env: ${process.env.META_DEBUG_PAGE_ID}`);
+                try {
+                    const pResp = await axios.get(`https://graph.facebook.com/v18.0/${process.env.META_DEBUG_PAGE_ID}`, {
+                        params: {
+                            fields: 'id,name,access_token,instagram_business_account{id,username,name}',
+                            access_token
+                        }
+                    });
+                    if (pResp.data) pages = [pResp.data];
+                } catch (err) { console.log(`   ⚠️ Method C fallback failed: ${err.message}`); }
+            }
+
+            console.log(`📄 Total Facebook pages discovered: ${pages.length}`);
+            
+            // Log details for debugging
+            pages.forEach(p => {
+                console.log(`   - Page: ${p.name} | Has IG linked: ${!!p.instagram_business_account}`);
+                if (p.instagram_business_account) {
+                    console.log(`     📸 IG Account found: ${p.instagram_business_account.username || p.instagram_business_account.id}`);
                 }
             });
-
-            const pages = pagesResponse.data.data || [];
-            console.log(`📄 Found ${pages.length} Facebook pages for user ${userId}`);
 
             // Calculate token expiry
             const tokenExpiry = expires_in
@@ -219,23 +250,25 @@ class ConnectedAccountsService {
                 }
             });
 
-            // If there's an Instagram Business Account linked to any page, save it as well
+            // Connect Instagram if found
             const pageWithIG = pages.find(p => p.instagram_business_account);
             if (pageWithIG) {
-                console.log(`📸 Found Instagram Business Account: ${pageWithIG.instagram_business_account.id}`);
+                console.log(`🚀 Connecting Instagram: ${pageWithIG.instagram_business_account.username || pageWithIG.instagram_business_account.id}`);
                 await this.connectAccount({
                     tenantId,
                     userId,
                     platform: 'INSTAGRAM',
-                    accessToken: access_token, // Instagram uses the same token (or page token)
+                    accessToken: pageWithIG.access_token || access_token,
                     accountId: pageWithIG.instagram_business_account.id,
-                    accountName: pageWithIG.instagram_business_account.name || `${userData.name} (Instagram)`,
+                    accountName: pageWithIG.instagram_business_account.name || pageWithIG.instagram_business_account.username || `${userData.name} (Instagram)`,
                     metadata: {
                         linkedFacebookPage: pageWithIG.name,
                         linkedFacebookPageId: pageWithIG.id,
-                        pages: pages // Keep pages metadata for context
+                        pages: pages
                     }
                 });
+            } else {
+                console.log('   ⚠️ No Instagram account discovered in any accessible page.');
             }
 
             // Update token expiry

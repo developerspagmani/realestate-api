@@ -11,6 +11,8 @@ router.get('/my', moduleController.getMyModules);
 // Admin-only module management
 router.get('/all', authorize('ADMIN'), moduleController.getAllModules);
 router.post('/', authorize('ADMIN'), moduleController.createModule);
+router.put('/:id', authorize('ADMIN'), moduleController.updateModule);
+router.delete('/:id', authorize('ADMIN'), moduleController.deleteModule);
 // Admin/Owner: Get modules for a specific tenant
 router.get('/tenant/:tenantId', async (req, res) => {
     // Non-admin users can only view their own tenant's modules

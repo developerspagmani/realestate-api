@@ -1028,22 +1028,31 @@ const getAllBookings = async (req, res) => {
           where: { userId: effectiveOwnerId },
           select: { propertyId: true }
         });
-        const propertyIds = accessRecords.map(r => r.propertyId);
+        const propertyIds = [...new Set(accessRecords.map(r => r.propertyId).filter(Boolean))];
 
         // OPTIMIZATION: Instead of joining Unit table in the OR clause (which is very slow),
         // we pre-fetch the unitIds that belong to these properties.
-        const units = await prisma.unit.findMany({
-          where: { propertyId: { in: propertyIds } },
-          select: { id: true }
-        });
-        const unitIds = units.map(u => u.id);
+        let unitIds = [];
+        if (propertyIds.length > 0) {
+          const units = await prisma.unit.findMany({
+            where: { propertyId: { in: propertyIds } },
+            select: { id: true }
+          });
+          unitIds = [...new Set(units.map(u => u.id).filter(Boolean))];
+        }
 
-        where.AND.push({
-          OR: [
-            { propertyId: { in: propertyIds } },
-            { unitId: { in: unitIds } }
-          ]
-        });
+        if (propertyIds.length > 0 || unitIds.length > 0) {
+          where.AND.push({
+            OR: [
+              { propertyId: { in: propertyIds } },
+              { unitId: { in: unitIds } }
+            ]
+          });
+        } else {
+          // If they have access records but none are linked to properties, 
+          // they should see nothing.
+          where.id = { in: [] };
+        }
       }
       // If no access records, they are treated as global owners for that tenant
     }

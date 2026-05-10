@@ -20,6 +20,7 @@ module.exports = {
         type: Joi.number().integer().valid(1, 2).optional(),
         planId: Joi.string().uuid().optional(),
         licenseKey: Joi.string().optional(),
+        referrerId: Joi.string().optional().allow('', null),
     }),
 
     login: Joi.object({

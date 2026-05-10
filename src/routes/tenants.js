@@ -17,6 +17,10 @@ router.get('/', authorize('ADMIN'), async (req, res) => {
     const tenants = await prisma.tenant.findMany({
       where,
       include: {
+        users: {
+          where: { role: 3 },
+          select: { id: true, name: true, email: true, phone: true, status: true }
+        },
         _count: {
           select: {
             users: true,
@@ -25,7 +29,8 @@ router.get('/', authorize('ADMIN'), async (req, res) => {
             bookings: true,
           }
         }
-      }
+      },
+      orderBy: { createdAt: 'desc' }
     });
     res.json({ success: true, data: tenants });
   } catch (error) {
@@ -98,7 +103,6 @@ router.post('/', authorize('ADMIN'), async (req, res) => {
         name,
         domain,
         type: type || 1,
-        plan: plan || 'basic',
         settings: settings || {},
         status: 1
       },
@@ -123,14 +127,13 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Insufficient permissions' });
     }
 
-    const { name, type, plan, settings, status, address, city, state, country, postalCode } = req.body;
+    const { name, type, settings, status, address, city, state, country, postalCode } = req.body;
 
     const tenant = await prisma.tenant.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
         ...(type !== undefined && { type }),
-        ...(plan && { plan }),
         ...(settings && { settings }),
         ...(status !== undefined && { status }),
         ...(address && { address }),

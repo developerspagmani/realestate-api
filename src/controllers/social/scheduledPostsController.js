@@ -28,7 +28,12 @@ const createScheduledPost = async (req, res) => {
         } = req.body;
 
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Admin fallback
+        if (!tenantId && req.user.role === 2) {
+            tenantId = '9fdf9466-624e-4790-b0ef-a0aa08ad09c0';
+        }
 
         // Validate required fields
         if (!title || !platforms || !scheduledDate || !scheduledTime) {
@@ -121,7 +126,12 @@ const createDraft = async (req, res) => {
         } = req.body;
 
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Super Admin fallback: Allow admin to see/manage different tenants
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId || req.body.tenantId;
+        }
 
         if (!title || !platforms) {
             return res.status(400).json({
@@ -178,7 +188,12 @@ const createDraft = async (req, res) => {
 const getScheduledPosts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Super Admin fallback: Allow admin to see/manage different tenants
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId || req.body.tenantId;
+        }
         const { status, platform, propertyId, page = 1, limit = 20 } = req.query;
 
         const where = {
@@ -259,7 +274,12 @@ const getScheduledPosts = async (req, res) => {
 const getDrafts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Super Admin fallback: Allow admin to see/manage different tenants
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId || req.body.tenantId;
+        }
         const { page = 1, limit = 20 } = req.query;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -500,7 +520,12 @@ const publishNow = async (req, res) => {
 const getStats = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Super Admin fallback: Allow admin to see/manage different tenants
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId || req.body.tenantId;
+        }
 
         const [total, scheduled, posted, failed, drafts] = await Promise.all([
             prisma.scheduledPost.count({ where: { userId, tenantId } }),
@@ -535,9 +560,14 @@ const getStats = async (req, res) => {
  */
 const getPostsByProperty = async (req, res) => {
     try {
-        const { propertyId } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Super Admin fallback: Allow admin to see/manage different tenants
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId || req.body.tenantId;
+        }
+        const { propertyId } = req.params;
 
         const posts = await prisma.scheduledPost.findMany({
             where: {

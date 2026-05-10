@@ -12,8 +12,8 @@ const portalRoutes = require('./portalRoutes');
 
 const { auth } = require('../../middleware/auth');
 
-// Mount routes
-router.use('/accounts', auth, connectedAccountsRoutes);
+// Mount authenticated routes
+router.use('/accounts', connectedAccountsRoutes);
 router.use('/posts/scheduled', auth, scheduledPostsRoutes);
 router.use('/posts/published', auth, publishedPostsRoutes);
 router.use('/analytics', auth, analyticsRoutes);

@@ -20,4 +20,7 @@ router.get('/engagement', analyticsController.getEngagementMetrics);
 // AI-powered forecast (linear regression on last 30 days)
 router.get('/forecast', analyticsController.getForecast);
 
+// Manually trigger a metrics sync
+router.post('/sync', analyticsController.syncMetrics);
+
 module.exports = router;

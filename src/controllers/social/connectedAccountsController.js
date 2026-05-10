@@ -11,7 +11,12 @@ const connectAccount = async (req, res) => {
     try {
         const { platform, accessToken, refreshToken, accountId, accountName, metadata } = req.body;
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+        
+        // Super Admin fallback: If no tenantId, Super Admin should use the target tenant from query or default to their own
+        if (!tenantId && req.user?.role === 2) {
+            tenantId = req.query.tenantId || req.user?.tenantId;
+        }
 
         // Validate required fields
         if (!platform || !accessToken || !accountId || !accountName) {
@@ -57,10 +62,20 @@ const connectAccount = async (req, res) => {
 const getConnectedAccounts = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+        
+        // Super Admin fallback
+        if (!tenantId && req.user.role === 2) {
+            tenantId = req.query.tenantId;
+        }
         const { platform, isActive } = req.query;
 
-        const where = { userId, tenantId };
+        let where = { userId, tenantId };
+        
+        // Admin sees all connected accounts in the system
+        if (req.user.role === 2) {
+            where = {}; // Remove filters for super admin
+        }
 
         if (platform) {
             where.platform = platform.toUpperCase();
@@ -249,7 +264,12 @@ const getAccountByPlatform = async (req, res) => {
     try {
         const { platform } = req.params;
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Admin fallback to see Skyline accounts
+        if (!tenantId && req.user.role === 2) {
+            tenantId = '9fdf9466-624e-4790-b0ef-a0aa08ad09c0';
+        }
 
         const account = await prisma.connectedAccount.findFirst({
             where: {
@@ -287,14 +307,27 @@ const getAccountByPlatform = async (req, res) => {
 const getConnectionStats = async (req, res) => {
     try {
         const userId = req.user.id;
-        const tenantId = req.tenant?.id || req.user?.tenantId;
+        let tenantId = req.tenant?.id || req.user?.tenantId;
+
+        // Admin fallback to see Skyline accounts
+        if (!tenantId && req.user.role === 2) {
+            tenantId = '9fdf9466-624e-4790-b0ef-a0aa08ad09c0';
+        }
+
+        let whereCount = { userId, tenantId };
+        let whereGroup = { userId, tenantId, isActive: true };
+
+        if (req.user.role === 2) {
+            whereCount = {};
+            whereGroup = { isActive: true };
+        }
 
         const [total, active, byPlatform] = await Promise.all([
-            prisma.connectedAccount.count({ where: { userId, tenantId } }),
-            prisma.connectedAccount.count({ where: { userId, tenantId, isActive: true } }),
+            prisma.connectedAccount.count({ where: whereCount }),
+            prisma.connectedAccount.count({ where: { ...whereCount, isActive: true } }),
             prisma.connectedAccount.groupBy({
                 by: ['platform'],
-                where: { userId, tenantId, isActive: true },
+                where: whereGroup,
                 _count: { id: true }
             })
         ]);
@@ -329,6 +362,7 @@ const getConnectionStats = async (req, res) => {
 const exchangeMetaCode = async (req, res) => {
     try {
         const { code, redirectUri } = req.body;
+        console.log(`🔌 Exchange Meta Code initiated. Code length: ${code?.length || 0}`);
         const userId = req.user.id;
         const tenantId = req.tenant?.id || req.user?.tenantId;
 
@@ -340,7 +374,7 @@ const exchangeMetaCode = async (req, res) => {
         }
 
         const account = await connectedAccountsService.exchangeMetaCode(code, userId, tenantId, redirectUri);
-
+        
         res.status(201).json({
             success: true,
             message: 'Meta account connected successfully',
@@ -353,6 +387,47 @@ const exchangeMetaCode = async (req, res) => {
             message: error.message || 'Server error connecting Meta account'
         });
     }
+};
+
+/**
+ * Handle Meta OAuth callback (GET) and redirect back to frontend
+ * This is a 'Bridge' to allow localhost development with Meta
+ * @route GET /api/social/accounts/meta/callback
+ */
+const handleMetaCallback = async (req, res) => {
+    const { code, state, error, error_description } = req.query;
+    
+    // Default frontend callback URL or use the one provided in 'state'
+    const FRONTEND_CALLBACK = state ? decodeURIComponent(state) : 'http://localhost:3000/realestate-owner-admin/auth/meta/callback';
+    
+    if (error) {
+        return res.send(`
+            <html>
+                <body>
+                    <script>
+                        window.location.href = "${FRONTEND_CALLBACK}?error=${encodeURIComponent(error)}&message=${encodeURIComponent(error_description || '')}";
+                    </script>
+                </body>
+            </html>
+        `);
+    }
+
+    // Redirect to frontend with the code (Instant bridge via Meta Refresh to bypass CSP)
+    res.send(`
+        <html>
+            <head>
+                <title>Virpanix Bridge</title>
+                <meta http-equiv="refresh" content="0; url=${FRONTEND_CALLBACK}?code=${code}">
+                <style>body { background: #f9fafb; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }</style>
+            </head>
+            <body>
+                <div style="text-align: center;">
+                    <p style="color: #6b7280; font-size: 14px;">Finalizing connection...</p>
+                    <p style="color: #9ca3af; font-size: 12px;">If you are not redirected, <a href="${FRONTEND_CALLBACK}?code=${code}">click here</a></p>
+                </div>
+            </body>
+        </html>
+    `);
 };
 
 /**
@@ -398,5 +473,6 @@ module.exports = {
     getAccountByPlatform,
     getConnectionStats,
     exchangeMetaCode,
-    exchangeGoogleCode
+    exchangeGoogleCode,
+    handleMetaCallback
 };

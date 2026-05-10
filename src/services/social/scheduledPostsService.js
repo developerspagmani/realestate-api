@@ -484,7 +484,8 @@ class ScheduledPostsService {
             };
 
             const [insightsRes, basicsRes, sharesRes] = await Promise.all([
-                fetchField('insights.metric(post_impressions_unique)'),
+                // Try to get reach/impressions - these sometimes fail for brand new posts (wait 24h)
+                fetchField('insights.metric(post_impressions_unique,post_engaged_users)'),
                 fetchField('likes.summary(true).limit(0),comments.summary(true).limit(0)'),
                 fetchField('shares')
             ]);
@@ -494,15 +495,17 @@ class ScheduledPostsService {
             const shares = sharesRes?.shares?.count || 0;
             
             let reach = 0;
-            if (insightsRes?.insights) {
-                const reachData = insightsRes.insights.data.find(i => i.name === 'post_impressions_unique');
+            if (insightsRes?.insights?.data) {
+                // 'post_impressions_unique' is the official reach metric
+                const reachData = insightsRes.insights.data.find(i => i.name === 'post_impressions_unique' || i.name === 'post_reach');
                 reach = reachData?.values[0]?.value || 0;
             }
 
             return { likes, comments, shares, reach };
         } catch (error) {
             console.error('Error fetching Facebook metrics:', error.message);
-            throw error;
+            // Return zeros instead of failing entirely for new posts
+            return { likes: 0, comments: 0, shares: 0, reach: 0 };
         }
     }
 
@@ -600,7 +603,6 @@ class ScheduledPostsService {
             const likesRes = await fetchSafe('likes.summary(true).limit(0)');
             const commentsSummaryRes = await fetchSafe('comments.summary(true).limit(0)');
             const sharesRes = await fetchSafe('shares');
-            const engagementRes = await fetchSafe('engagement');
             
             // Step 4: Multi-Token & Multi-Field Comment Fetch Engine
             let comments = [];
@@ -619,7 +621,7 @@ class ScheduledPostsService {
                     console.log(`🔄 Attempting comment fetch for ${platformPostId} with ${meta.n}...`);
                     
                     // FALLBACK 1: Direct Edge
-                    for (const f of [commentFields, basicCommentFields, safeCommentFields, 'id,message']) {
+                    for (const f of [commentFields, basicCommentFields, safeCommentFields, 'message', 'id,message']) {
                         try {
                             const res = await axios.get(`https://graph.facebook.com/v18.0/${platformPostId}/comments`, {
                                 params: { fields: f, limit: 100, access_token: meta.t }
@@ -648,6 +650,7 @@ class ScheduledPostsService {
                 console.log(`💬 Successfully retrieved ${rawComments.length} comments for ${platformPostId}`);
                 comments = rawComments.map(c => ({
                     id: c.id,
+                    platform: 'FACEBOOK',
                     message: c.message || '[Content Hidden/Restricted]',
                     createdAt: c.created_time || new Date().toISOString(),
                     user: c.from ? {
@@ -674,9 +677,9 @@ class ScheduledPostsService {
                 console.log(`📈 Reach: ${reachCount}, Impressions: ${impressionsCount}`);
             }
 
-            const likesCount = likesRes?.likes?.summary?.total_count || engagementRes?.engagement?.like_count || 0;
-            const commentsCount = commentsSummaryRes?.comments?.summary?.total_count || engagementRes?.engagement?.comment_count || 0;
-            const sharesCount = sharesRes?.shares?.count || engagementRes?.shares?.count || engagementRes?.engagement?.share_count || 0;
+            const likesCount = likesRes?.likes?.summary?.total_count || 0;
+            const commentsCount = commentsSummaryRes?.comments?.summary?.total_count || 0;
+            const sharesCount = sharesRes?.shares?.count || 0;
             
             console.log(`📊 Totals -> Likes: ${likesCount}, Comments: ${commentsCount}, Shares: ${sharesCount}`);
 
@@ -742,6 +745,7 @@ class ScheduledPostsService {
             const commentsData = mainData.comments?.data || [];
             const comments = commentsData.map(c => ({
                 id: c.id,
+                platform: 'INSTAGRAM',
                 message: c.text,
                 createdAt: c.created_time,
                 user: {
@@ -764,7 +768,7 @@ class ScheduledPostsService {
             };
         } catch (error) {
             console.error('Error fetching Instagram detailed engagement:', error.message);
-            throw new Error(`Instagram API Error: ${error.message}`);
+            throw new Error(`Instagram API Error: ${error.message}`, { cause: error });
         }
     }
 
@@ -856,6 +860,80 @@ class ScheduledPostsService {
         const ConnectedAccountsService = require('./connectedAccountsService');
         const connectedAccountsService = new ConnectedAccountsService();
         return await connectedAccountsService.syncAccountData(accountId, userId, tenantId);
+    }
+
+    /**
+     * Sync metrics for all published posts in the last week
+     * This runs via background cron to keep dashboard counts fresh
+     */
+    async syncAllRecentPostsMetrics() {
+        try {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+            console.log('📊 [Background Worker] Starting metrics sync for recent posts...');
+
+            // Get all published posts that need refresh
+            const posts = await prisma.publishedPost.findMany({
+                where: {
+                    publishedAt: { gte: sevenDaysAgo },
+                    platform: { in: ['FACEBOOK', 'INSTAGRAM'] }
+                },
+                orderBy: { publishedAt: 'desc' }
+            });
+
+            if (posts.length === 0) {
+                console.log('   └─ No recent posts found to sync.');
+                return { count: 0 };
+            }
+
+            console.log(`   └─ Found ${posts.length} posts to refresh.`);
+
+            let updatedCount = 0;
+            for (const post of posts) {
+                try {
+                    // Get the account associated with the post
+                    const account = await prisma.connectedAccount.findFirst({
+                        where: {
+                            userId: post.userId,
+                            tenantId: post.tenantId,
+                            platform: post.platform,
+                            isActive: true
+                        }
+                    });
+
+                    if (!account) continue;
+
+                    let newMetrics = {};
+                    if (post.platform === 'FACEBOOK') {
+                        newMetrics = await this.getFacebookMetrics(post.platformPostId, account);
+                    } else if (post.platform === 'INSTAGRAM') {
+                        newMetrics = await this.getInstagramMetrics(post.platformPostId, account);
+                    }
+
+                    // Update database
+                    await prisma.publishedPost.update({
+                        where: { id: post.id },
+                        data: {
+                            metrics: newMetrics,
+                            updatedAt: new Date()
+                        }
+                    });
+                    updatedCount++;
+
+                    // Small delay to prevent rate limiting if many posts
+                    if (posts.length > 5) await new Promise(r => setTimeout(r, 500));
+                } catch (err) {
+                    console.error(`   ❌ Failed to sync metrics for post ${post.id}:`, err.message);
+                }
+            }
+
+            console.log(`✅ [Background Worker] Metrics sync complete. Updated ${updatedCount} posts.`);
+            return { count: updatedCount };
+        } catch (error) {
+            console.error('❌ Error in syncAllRecentPostsMetrics:', error);
+            throw error;
+        }
     }
 }
 

@@ -1,18 +1,55 @@
 const nodemailer = require('nodemailer');
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 
-// Initialize SES Client
-const ses = new SESv2Client({
+// Initialize SES Client with standard v3 client
+const sesConfig = {
     region: process.env.AWS_REGION || 'ap-south-1',
-    credentials: {
+};
+
+// Support for Session Token (required for temporary credentials/MFA/SSO)
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    sesConfig.credentials = {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-});
+        ...(process.env.AWS_SESSION_TOKEN && { sessionToken: process.env.AWS_SESSION_TOKEN })
+    };
+}
 
-// Create transporter using SES
-const transporter = nodemailer.createTransport({
-    SES: { sesClient: ses, SendEmailCommand },
+let transporter;
+
+// Support switching between SES and SMTP via EMAIL_SERVICE env var
+if (process.env.EMAIL_SERVICE === 'smtp') {
+    console.log('[Email Service] Initializing via SMTP...');
+    transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'email-smtp.ap-south-1.amazonaws.com',
+        port: parseInt(process.env.EMAIL_PORT) || 587,
+        secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
+        auth: {
+            user: process.env.EMAIL_USER || process.env.AWS_ACCESS_KEY_ID,
+            pass: process.env.EMAIL_PASS || process.env.AWS_SECRET_ACCESS_KEY,
+        },
+    });
+} else {
+    console.log('[Email Service] Initializing via AWS SES API...');
+    const ses = new SESv2Client(sesConfig);
+    transporter = nodemailer.createTransport({
+        SES: { sesClient: ses, SendEmailCommand },
+    });
+}
+
+// Verify transporter connection on startup
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('[Email Service] ❌ Transporter verification failed:', error.message);
+        if (error.name === 'UnrecognizedClientException') {
+            console.error('[Email Service] 💡 TIP: Your AWS Access Key or Secret Key is invalid. Check your .env file. If you are using temporary credentials, make sure to provide AWS_SESSION_TOKEN.');
+        }
+        if (error.name === 'AccessDenied' || error.message.includes('Access Denied')) {
+            console.error('[Email Service] 💡 TIP: Your IAM user lacks "ses:SendRawEmail" or "ses:SendEmail" permissions.');
+        }
+    } else {
+        console.log('[Email Service] ✅ Transporter is ready to send emails');
+    }
 });
 
 const APP_NAME = process.env.APP_NAME || 'Virpanix';
@@ -481,7 +518,13 @@ const sendTemplateEmail = async (email, subject, html, tenantInfo = {}) => {
         console.log(`[Email Service] Template email sent to ${email}: ${info.messageId}`);
         return true;
     } catch (error) {
-        console.error('[Email Service] Error sending template email:', error);
+        console.error('[Email Service] ❌ CRITICAL SEND ERROR:', error);
+        if (error.name === 'MessageRejected' || error.code === 'MessageRejected') {
+            console.error('[Email Service] 💡 TIP: Your AWS SES account might be in Sandbox mode. In Sandbox, both the Sender AND the Recipient email addresses must be verified in the AWS Console.');
+        }
+        if (error.name === 'IdentityNotVerifiedException') {
+            console.error('[Email Service] 💡 TIP: The sender email address (FROM_EMAIL) is not verified in SES.');
+        }
         return false;
     }
 };

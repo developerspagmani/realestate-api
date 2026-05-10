@@ -5,8 +5,25 @@ const bcrypt = require('bcryptjs');
 const getDashboardStats = async (req, res) => {
   try {
     const { tenantId: queryTenantId, ownerId, industryType } = req.query;
-    const isAdmin = req.user.role === 2;
+    const isAdmin = req.user?.role === 2;
     const tenantId = queryTenantId || req.tenant?.id || (isAdmin ? null : req.user?.tenantId);
+
+    // If both tenantId and industryType are provided, verify the tenant once
+    // and then we can simplify the whereBase to use only tenantId.
+    // This avoids potentially buggy relation filters in Prisma groupBy/aggregate.
+    if (tenantId && industryType) {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { type: true }
+      });
+      
+      if (!tenant || tenant.type !== parseInt(industryType)) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tenant not found or industry type mismatch'
+        });
+      }
+    }
 
     if (!tenantId && !isAdmin && !industryType) {
       return res.status(400).json({
@@ -17,8 +34,10 @@ const getDashboardStats = async (req, res) => {
 
     // Common where clauses
     const whereBase = {};
-    if (tenantId) whereBase.tenantId = tenantId;
-    if (industryType) {
+    if (tenantId) {
+      whereBase.tenantId = tenantId;
+    } else if (industryType) {
+      // Only use relation filter if tenantId is NOT provided (Super Admin view)
       whereBase.tenant = { type: parseInt(industryType) };
     }
 
@@ -26,8 +45,8 @@ const getDashboardStats = async (req, res) => {
     let finalOwnerFilter = {};
     let finalBookingOwnerFilter = {};
 
-    const isActuallyOwner = req.user.role === 3;
-    const effectiveOwnerId = isActuallyOwner ? req.user.id : (isAdmin && ownerId ? ownerId : null);
+    const isActuallyOwner = req.user?.role === 3;
+    const effectiveOwnerId = isActuallyOwner ? req.user?.id : (isAdmin && ownerId ? ownerId : null);
 
     // Initial parallel batch for flags and counts
     let checkAccessPromise = Promise.resolve(0);
@@ -66,11 +85,107 @@ const getDashboardStats = async (req, res) => {
         where: { userId: effectiveOwnerId, tenantId: tenantId || undefined },
         select: { propertyId: true }
       });
-      if (accessibleProperties.length > 0) {
-        const propertyIds = accessibleProperties.map(p => p.propertyId);
-        leadOwnerFilter = { propertyId: { in: propertyIds } };
+
+      const propertyIds = [...new Set(accessibleProperties.map(p => p.propertyId))];
+      const nonNullIds = propertyIds.filter(id => id !== null);
+      const hasNull = propertyIds.includes(null);
+
+      if (nonNullIds.length > 0) {
+        if (hasNull) {
+          leadOwnerFilter = {
+            OR: [
+              { propertyId: { in: nonNullIds } },
+              { propertyId: null }
+            ]
+          };
+        } else {
+          leadOwnerFilter = { propertyId: { in: nonNullIds } };
+        }
+      } else if (hasNull) {
+        leadOwnerFilter = { propertyId: null };
+      } else {
+        // If effectiveOwnerId is set but no access records found, 
+        // they should see nothing (default to a filter that matches nothing).
+        leadOwnerFilter = { id: { in: [] } };
       }
     }
+
+    const queries = [
+      prisma.property.count({ where: { status: 1, ...finalWhereBase, ...finalOwnerFilter } }),
+      prisma.unit.count({ where: { status: 1, ...finalWhereBase, property: finalOwnerFilter } }),
+      prisma.booking.count({ where: { ...finalWhereBase, ...finalBookingOwnerFilter } }),
+      prisma.booking.count({ where: { status: 2, ...finalWhereBase, ...finalBookingOwnerFilter } }),
+      prisma.booking.count({ where: { status: 4, ...finalWhereBase, ...finalBookingOwnerFilter } }),
+      prisma.booking.aggregate({
+        where: { status: { in: [2, 4] }, ...finalWhereBase, ...finalBookingOwnerFilter },
+        _sum: { totalPrice: true }
+      }),
+      prisma.booking.findMany({
+        where: { ...finalWhereBase, ...finalBookingOwnerFilter },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          unit: { select: { id: true, unitCode: true, unitCategory: true } }
+        }
+      }),
+      prisma.booking.groupBy({
+        by: ['unitId'],
+        where: {
+          status: 4,
+          unitId: { not: null },
+          ...finalWhereBase,
+          ...finalBookingOwnerFilter
+        },
+        _count: { id: true },
+        _sum: { totalPrice: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 5
+      }),
+      prisma.lead.count({ where: { ...finalWhereBase, ...leadOwnerFilter } }),
+      prisma.lead.findMany({
+        where: { ...finalWhereBase, ...leadOwnerFilter },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { property: { select: { title: true } } }
+      }),
+      prisma.property.findMany({
+        where: { ...finalWhereBase, ...finalOwnerFilter },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, title: true, city: true, price: true, status: true, createdAt: true,
+          mainImage: { select: { url: true } }
+        }
+      }),
+      prisma.task.findMany({
+        where: { tenantId: tenantId || undefined, status: { in: [1, 2] } },
+        take: 5,
+        orderBy: { dueDate: 'asc' },
+        include: {
+          lead: { select: { name: true } },
+          agent: { include: { user: { select: { name: true } } } }
+        }
+      }),
+      prisma.lead.groupBy({
+        by: ['source'],
+        where: { ...finalWhereBase, ...leadOwnerFilter },
+        _count: { id: true }
+      })
+    ];
+
+    const resultsSettled = await Promise.allSettled(queries);
+    
+    // Check for failures
+    resultsSettled.forEach((res, idx) => {
+      if (res.status === 'rejected') {
+        console.error(`Query ${idx} failed:`, res.reason);
+      }
+    });
+
+    // If any critical query failed, throw the first one
+    const firstError = resultsSettled.find(res => res.status === 'rejected');
+    if (firstError) throw firstError.reason;
 
     const [
       totalProperties,
@@ -86,135 +201,10 @@ const getDashboardStats = async (req, res) => {
       recentProperties,
       upcomingTasks,
       leadSourceStatsRaw
-    ] = await Promise.all([
-      prisma.property.count({
-        where: {
-          status: 1,
-          ...finalWhereBase,
-          ...finalOwnerFilter
-        }
-      }),
-      prisma.unit.count({
-        where: {
-          status: 1,
-          ...finalWhereBase,
-          property: finalOwnerFilter
-        }
-      }),
-      prisma.booking.count({
-        where: {
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        }
-      }),
-      prisma.booking.count({
-        where: {
-          status: 2, // Confirmed (Active)
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        }
-      }),
-      prisma.booking.count({
-        where: {
-          status: 4, // Completed
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        }
-      }),
-      prisma.booking.aggregate({
-        where: {
-          status: { in: [2, 4] },
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        },
-        _sum: { totalPrice: true }
-      }),
-      prisma.booking.findMany({
-        where: {
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: {
-            select: { id: true, name: true, email: true }
-          },
-          unit: {
-            select: { id: true, unitCode: true, unitCategory: true }
-          }
-        }
-      }),
-      prisma.booking.groupBy({
-        by: ['unitId'],
-        where: {
-          status: 4,
-          ...finalWhereBase,
-          ...finalBookingOwnerFilter
-        },
-        _count: { id: true },
-        _sum: { totalPrice: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: 5
-      }),
-      prisma.lead.count({
-        where: {
-          ...finalWhereBase,
-          ...leadOwnerFilter
-        }
-      }),
-      prisma.lead.findMany({
-        where: {
-          ...finalWhereBase,
-          ...leadOwnerFilter
-        },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          property: { select: { title: true } }
-        }
-      }),
-      prisma.property.findMany({
-        where: {
-          ...finalWhereBase,
-          ...finalOwnerFilter
-        },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          title: true,
-          city: true,
-          price: true,
-          status: true,
-          createdAt: true,
-          mainImage: { select: { url: true } }
-        }
-      }),
-      prisma.task.findMany({
-        where: {
-          tenantId: tenantId || undefined,
-          status: { in: [1, 2] } // Pending or In Progress
-        },
-        take: 5,
-        orderBy: { dueDate: 'asc' },
-        include: {
-          lead: { select: { name: true } },
-          agent: { include: { user: { select: { name: true } } } }
-        }
-      }),
-      prisma.lead.groupBy({
-        by: ['source'],
-        where: {
-          ...finalWhereBase,
-          ...leadOwnerFilter
-        },
-        _count: { id: true }
-      })
-    ]);
+    ] = resultsSettled.map(res => res.value);
 
     // Get unit details for top workspaces in one query
-    const topUnitIds = topWorkspaces.map(item => item.unitId);
+    const topUnitIds = topWorkspaces.map(item => item.unitId).filter(Boolean);
     const topUnitsFetched = topUnitIds.length > 0 ? await prisma.unit.findMany({
       where: { id: { in: topUnitIds } },
       select: {
@@ -230,14 +220,17 @@ const getDashboardStats = async (req, res) => {
       }
     }) : [];
 
-    const topWorkspaceDetails = topWorkspaces.map(item => {
-      const unit = topUnitsFetched.find(u => u.id === item.unitId);
-      return {
-        ...unit,
-        bookingCount: item._count.id,
-        totalRevenue: item._sum.totalPrice || 0,
-      };
-    });
+    const topWorkspaceDetails = topWorkspaces
+      .filter(item => item.unitId) // Double check for null unitId
+      .map(item => {
+        const unit = topUnitsFetched.find(u => u.id === item.unitId);
+        if (!unit) return null;
+        return {
+          ...unit,
+          bookingCount: item._count.id,
+          totalRevenue: item._sum.totalPrice || 0,
+        };
+      }).filter(Boolean);
 
     // Calculate history for charts based on period
     const { period = 'last6months', startDate: customStart, endDate: customEnd } = req.query;
@@ -380,10 +373,17 @@ const getDashboardStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get dashboard stats error:', error);
+    console.error('--- DASHBOARD ERROR START ---');
+    console.error(error);
+    console.error('--- DASHBOARD ERROR END ---');
+    
+    const errorMessage = error.message || 'Unknown server error';
     res.status(500).json({
       success: false,
-      message: 'Server error fetching dashboard statistics'
+      message: `Error: ${errorMessage}`,
+      error: error.message,
+      code: error.code,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

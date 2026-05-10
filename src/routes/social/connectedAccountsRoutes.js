@@ -1,6 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const connectedAccountsController = require('../../controllers/social/connectedAccountsController');
+const { auth } = require('../../middleware/auth');
+
+// Public OAuth callback endpoints
+router.get('/meta/callback', connectedAccountsController.handleMetaCallback);
+
+// Apply authentication middleware to all other routes
+router.use(auth);
 
 // Connect a new account
 router.post('/connect', connectedAccountsController.connectAccount);

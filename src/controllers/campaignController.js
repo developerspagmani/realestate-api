@@ -211,9 +211,9 @@ const launchCampaign = async (req, res) => {
           const success = await sendTemplateEmail(lead.email, subject, customizedContent);
           if (success) {
             deliveredCount++;
-            console.log(`[Campaign Launch] Successfully sent to ${lead.email}`);
+            console.log(`[Campaign Launch] ✅ SUCCESS: Email matched and sent to ${lead.email}`);
           } else {
-            console.error(`[Campaign Launch] FAILED to send to ${lead.email}`);
+            console.error(`[Campaign Launch] ❌ FAILED: Delivery rejected for ${lead.email}. See emailService output for reason.`);
           }
         } else {
           console.warn(`[Campaign Launch] Lead ${lead.id} has no email address. Skipping.`);

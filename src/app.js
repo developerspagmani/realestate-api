@@ -77,13 +77,8 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "https://app.virpanix.com",
-  "https://realestate-api-seven.vercel.app",
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "https://unsolemnised-renda-feirie.ngrok-free.dev",
-  "https://realestate-admin-virpanix.vercel.app",
-  "https://realestate-admin-vert.vercel.app",
-  'https://unsolemnised-renda-feirie.ngrok-free.dev'
+  "https://app-dev.virpanix.com",
+  "https://dev.virpanix.com"
 ].filter(Boolean);
 
 app.use(cors({

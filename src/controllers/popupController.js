@@ -66,14 +66,10 @@ const popupController = {
                 finalContent.targetWidgetIds = targetWidgetIds;
             }
 
-            if (!websiteId) {
-                return res.status(400).json({ success: false, message: 'Website ID is required.' });
-            }
-
             const popup = await prisma.websitePopup.create({
                 data: {
                     name,
-                    websiteId,
+                    websiteId: websiteId || null,
                     type,
                     trigger,
                     triggerValue: triggerValue || null,
