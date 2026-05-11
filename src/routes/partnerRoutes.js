@@ -17,6 +17,8 @@ router.post('/add-client', auth, authorize(ROLE_PARTNER), partnerController.addP
 
 // Admin Routes for Partners
 router.get('/admin/list', auth, authorize('ADMIN'), partnerController.adminListPartners);
+router.get('/admin/:id', auth, authorize('ADMIN'), partnerController.adminGetPartnerDetail);
 router.patch('/admin/:id', auth, authorize('ADMIN'), partnerController.adminUpdatePartner);
+router.post('/admin/:id/send-confirmation', auth, authorize('ADMIN'), partnerController.adminSendConfirmationEmail);
 
 module.exports = router;

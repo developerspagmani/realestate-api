@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
+const { sendPartnerWelcomeEmail } = require('../utils/emailService');
 
 // Role 5 is dedicated to Partners
 const ROLE_PARTNER = 5;
@@ -31,16 +32,30 @@ const registerPartner = async (req, res) => {
       monthlyClientBase,
       country,
       salesCapability,
-      tenantId: bodyTenantId
+      tenantId: bodyTenantId,
+      tenantType
     } = req.body;
 
-    // Determine tenantId: From middleware (req.tenant) or body
-    const tenantId = req.tenant?.id || bodyTenantId;
+    // Determine tenantId: From middleware (req.tenant), body, or find by type
+    let tenantId = req.tenant?.id || bodyTenantId;
+
+    if (!tenantId && tenantType) {
+      const parsedType = parseInt(tenantType);
+      if (!isNaN(parsedType)) {
+        // Find first tenant of this type (e.g. 1: Real Estate, 2: Coworking)
+        const hostTenant = await prisma.tenant.findFirst({
+          where: { type: parsedType, status: 1 }
+        });
+        if (hostTenant) {
+          tenantId = hostTenant.id;
+        }
+      }
+    }
 
     if (!tenantId) {
       return res.status(400).json({
         success: false,
-        message: 'Tenant context is required for partner registration'
+        message: 'Tenant context or valid Industry Type is required for partner registration'
       });
     }
 
@@ -92,6 +107,22 @@ const registerPartner = async (req, res) => {
       return { user, profile };
     });
 
+    // Send Welcome Email (Background)
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true, customDomain: true, settings: true }
+    }).catch(() => null);
+    
+    const themeConfig = {
+      name: tenant?.name,
+      customDomain: tenant?.customDomain,
+      emailSkinColor: tenant?.settings?.emailSkinColor
+    };
+
+    sendPartnerWelcomeEmail(email, companyName, themeConfig).catch(emailError => {
+      console.error('Non-blocking error: Partner welcome email failed:', emailError);
+    });
+
     res.status(201).json({
       success: true,
       message: 'Partner application submitted successfully. Our team will review your profile.',
@@ -140,16 +171,12 @@ const adminListPartners = async (req, res) => {
   }
 };
 
-/**
- * Admin: Update Partner status/type (stored in User table)
- */
 const adminUpdatePartner = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, partnerType } = req.body;
     const tenantId = req.tenant?.id;
 
-    // status: 1 (Approved), 3 (Rejected/Deactivated)
     const user = await prisma.user.update({
       where: { 
         id,
@@ -157,8 +184,6 @@ const adminUpdatePartner = async (req, res) => {
       },
       data: {
         ...(status !== undefined && { status: parseInt(status) })
-        // partnerType might need a field in User or Profile. 
-        // I'll keep it in Profile if needed, but for now I'll just update status.
       },
       include: { partnerProfile: true }
     });
@@ -173,6 +198,104 @@ const adminUpdatePartner = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating partner'
+    });
+  }
+};
+
+/**
+ * Admin: Get Partner Detail with referred clients and earnings
+ */
+const adminGetPartnerDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant?.id;
+
+    const partner = await prisma.user.findUnique({
+      where: { 
+        id,
+        role: ROLE_PARTNER,
+        ...(tenantId && { tenantId })
+      },
+      include: { 
+        partnerProfile: true,
+        referredTenants: {
+          include: {
+            plan: true,
+            _count: {
+              select: { users: true, properties: true, units: true, bookings: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!partner) {
+      return res.status(404).json({
+        success: false,
+        message: 'Partner not found'
+      });
+    }
+
+    const { passwordHash: _, ...partnerData } = partner;
+
+    // Mock some analytics if not in DB yet
+    const analytics = {
+      totalRevenueGenerated: partner.referredTenants.reduce((sum, t) => sum + (Number(t.plan?.price) || 0), 0),
+      activeClients: partner.referredTenants.filter(t => t.status === 1).length,
+      conversionRate: partner.referredTenants.length > 0 ? (partner.referredTenants.filter(t => t.status === 1).length / partner.referredTenants.length) * 100 : 0,
+      monthlyEarnings: (Number(partner.partnerProfile?.commissionBalance) || 0) * 0.1 // Simplified mock
+    };
+
+    res.status(200).json({
+      success: true,
+      data: { 
+        partner: partnerData,
+        analytics
+      }
+    });
+  } catch (error) {
+    console.error('Admin get partner detail error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching partner detail'
+    });
+  }
+};
+
+/**
+ * Admin: Send Confirmation Email to Partner
+ */
+const adminSendConfirmationEmail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant?.id;
+
+    const partner = await prisma.user.findUnique({
+      where: { id, role: ROLE_PARTNER },
+      include: { partnerProfile: true }
+    });
+
+    if (!partner) {
+      return res.status(404).json({
+        success: false,
+        message: 'Partner not found'
+      });
+    }
+
+    const { sendAccountConfirmationEmail } = require('../utils/emailService');
+    const tenant = tenantId ? await prisma.tenant.findUnique({ where: { id: tenantId } }) : null;
+    
+    await sendAccountConfirmationEmail(partner.email, partner.name || partner.companyName, tenant || {});
+
+    res.status(200).json({
+      success: true,
+      message: 'Confirmation email sent successfully'
+    });
+  } catch (error) {
+    console.error('Admin send confirmation email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error sending confirmation email'
     });
   }
 };
@@ -351,6 +474,8 @@ module.exports = {
   registerPartner,
   adminListPartners,
   adminUpdatePartner,
+  adminGetPartnerDetail,
+  adminSendConfirmationEmail,
   getPartnerProfile,
   updatePartnerProfile,
   addPartnerClient

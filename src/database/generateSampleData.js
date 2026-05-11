@@ -480,6 +480,12 @@ async function generateSampleData() {
         }
       });
       agents.push(agent);
+
+      // FIX: Ensure user role is updated to Agent (4)
+      await prisma.user.update({
+        where: { id: agentUsers[i].id },
+        data: { role: 4 }
+      });
       // Assign both properties to each agent for testing
       for (let p = 0; p < 2; p++) {
         await prisma.agentProperty.create({

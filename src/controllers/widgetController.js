@@ -177,6 +177,7 @@ const widgetController = {
                         select: {
                             name: true,
                             type: true,
+                            settings: true,
                             country: true
                         }
                     }

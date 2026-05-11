@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const widgetController = require('../controllers/widgetController');
+const aiController = require('../controllers/aiController');
 const { auth, authorize, checkModule } = require('../middleware/auth');
 
 // Public route for widget rendering (unauthenticated)
 router.get('/public/:uniqueId', widgetController.getPublicWidget);
 router.post('/public/:uniqueId/leads', widgetController.captureLead);
+router.post('/public/chat', aiController.handleChat);
+router.post('/public/chat/action', aiController.handleAction);
 
 // Protected routes
 router.use(auth);

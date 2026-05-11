@@ -65,7 +65,7 @@ const getEmailTheme = (tenantInfo = {}) => {
     const showFooter = tenantInfo.showFooter !== undefined ? tenantInfo.showFooter : true;
     const footerText = tenantInfo.footerText || '';
     const currencySymbol = tenantInfo.currencySymbol || '$';
-    
+
     // Social Links
     const facebookUrl = tenantInfo.facebookUrl || '';
     const twitterUrl = tenantInfo.twitterUrl || '';
@@ -77,7 +77,7 @@ const getEmailTheme = (tenantInfo = {}) => {
 
     let socialHtml = '';
     const iconStyle = `margin: 0 8px; text-decoration: none; display: inline-block;`;
-    
+
     if (facebookUrl) socialHtml += `<a href="${facebookUrl}" style="${iconStyle}"><img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" width="20" height="20" alt="FB"></a>`;
     if (twitterUrl) socialHtml += `<a href="${twitterUrl}" style="${iconStyle}"><img src="https://cdn-icons-png.flaticon.com/512/5968/5968830.png" width="20" height="20" alt="X"></a>`;
     if (instagramUrl) socialHtml += `<a href="${instagramUrl}" style="${iconStyle}"><img src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="20" height="20" alt="IG"></a>`;
@@ -257,23 +257,23 @@ const sendPropertyRecommendationEmail = async (leadEmail, leadName, properties, 
     try {
         const theme = getEmailTheme(tenantInfo);
         const symbol = tenantInfo.currencySymbol || '$';
-        
+
         const propertyHtml = properties.map(p => {
             const mainImage = p.mainImage?.url || 'https://via.placeholder.com/600x400?text=Property+Image';
-            
+
             // Link logic: Owner Site -> Company Site -> Tenant Site -> Default Domain
             const ownerWebsite = p.owner?.website || p.owner?.companyWebsite || p.website;
             const baseUrl = ownerWebsite ? (ownerWebsite.startsWith('http') ? ownerWebsite : `https://${ownerWebsite}`) : theme.domain;
             const propertyLink = baseUrl.includes('/properties/') ? baseUrl : `${baseUrl}/properties/${p.slug || p.id}`;
-            
+
             // Format price range safely
             const prices = (p.units || [])
                 .map(u => Number(u.price) || Number(u.unitPricing?.[0]?.price) || null)
                 .filter(pr => pr !== null && pr > 0);
-            
+
             const priceRange = prices.length > 0
-                ? (prices.length === 1 
-                    ? `${symbol}${prices[0].toLocaleString()}` 
+                ? (prices.length === 1
+                    ? `${symbol}${prices[0].toLocaleString()}`
                     : `${symbol}${Math.min(...prices).toLocaleString()} - ${symbol}${Math.max(...prices).toLocaleString()}`)
                 : 'Price on Request';
 
@@ -591,6 +591,49 @@ const sendAgentCredentialsEmail = async (email, name, username, password, tenant
     }
 };
 
+/**
+ * Send Partner Welcome/Application Received Email
+ */
+const sendPartnerWelcomeEmail = async (email, companyName, tenantInfo = {}) => {
+    try {
+        const theme = getEmailTheme(tenantInfo);
+
+        const mailOptions = {
+            from: `"${theme.appName}" <${FROM_EMAIL}>`,
+            to: email,
+            subject: `Partner Application Received - ${theme.appName}`,
+            html: `
+        <div style="${theme.styles.container}">
+            <div style="${theme.styles.header}">
+                <h1 style="${theme.styles.h1}">Application Received!</h1>
+            </div>
+            <p style="${theme.styles.p}">
+                Hello ${companyName},<br><br>
+                Thank you for your interest in the <strong>${theme.appName}</strong> Partner Program. 
+                We have received your application and it is currently being reviewed by our team.
+            </p>
+            <div style="background-color: #f9fafb; padding: 20px; border-radius: 10px; margin: 25px 0; border-left: 4px solid ${theme.primaryColor};">
+                <p style="margin: 0; font-size: 14px; color: #4b5563;">
+                    <strong>Next Steps:</strong><br>
+                    Our team will review your profile and strategy statement. You will receive a follow-up email within 24-48 hours regarding your status.
+                </p>
+            </div>
+            <p style="${theme.styles.p}">
+                If you have any immediate questions, feel free to reply to this email.
+            </p>
+          </div>
+        `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Partner welcome email sent: %s', info.messageId);
+        return true;
+    } catch (error) {
+        console.error('Error sending partner welcome email:', error);
+        return false;
+    }
+};
+
 module.exports = {
     sendActivationEmail,
     sendAccountConfirmationEmail,
@@ -600,5 +643,6 @@ module.exports = {
     sendLeadEmail,
     sendTaskAssignmentEmail,
     sendTemplateEmail,
-    sendAgentCredentialsEmail
+    sendAgentCredentialsEmail,
+    sendPartnerWelcomeEmail
 };
